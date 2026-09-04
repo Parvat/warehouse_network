@@ -1,5 +1,6 @@
 import {
-  BEAM_CONNECTOR_IN, BEAM_FACE_IN, BEAM_LENGTHS_IN, FRAME_HEIGHTS_FT, LIFT_CLEARANCE_IN,
+  BEAM_CONNECTOR_IN, BEAM_FACE_IN, BEAM_LENGTHS_IN, FRAME_HEIGHTS_FT, LANE_TIE_IN,
+  LIFT_CLEARANCE_IN,
   PALLET_OVERHANG_IN, SPRINKLER_CLEARANCE_IN,
 } from './constants.js';
 import type { BuildingInput, PalletInput, RackConfigInput, RackSpec } from './types.js';
@@ -82,6 +83,20 @@ export function topBeamFits(spec: {
 }): boolean {
   if (spec.beamLevels <= 0) return true;
   return spec.beamLevels * spec.levelPitchIn + BEAM_FACE_IN <= spec.frameHeightIn + 1e-9;
+}
+
+/**
+ * How tall a drive-in upright is, in.
+ *
+ * Up past the top rail, past the load resting on it, and on to the tie that
+ * braces the lane across. Not the beam-frame figure: there are no beams here,
+ * and a frame that stopped at the top rail would have nothing to brace to.
+ */
+export function laneFrameHeightIn(a: {
+  levels: number; levelPitchIn: number; loadHeightIn: number;
+}): number {
+  const topRail = Math.max(0, a.levels - 1) * a.levelPitchIn;
+  return topRail + a.loadHeightIn + LANE_TIE_IN;
 }
 
 /** Tallest standard frame that still clears the sprinklers. */

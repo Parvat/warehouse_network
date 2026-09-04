@@ -15,7 +15,7 @@ export * from './constants.js';
 export * from './crossaisles.js';
 export {
   palletsPerBay, bestFitBeam, bestFitFrameFt, deriveFromPallet,
-  levelModuleIn, beamLevelsIn, topBeamFits,
+  levelModuleIn, beamLevelsIn, topBeamFits, laneFrameHeightIn,
   type PalletDerivation, type SprinklerKind,
 } from './spec.js';
 export { aisleForExtraBand } from './layout.js';

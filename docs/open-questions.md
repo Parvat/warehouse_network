@@ -17,3 +17,15 @@ It decides how many lanes fit across a block, and so the position count: a 40 in
 pallet gives a 4 ft lane, and an inch either way moves the lane count in a long
 building. Confirm against the truck's actual mast width and the dealer's own
 lane standard before quoting from it.
+
+## Drive-in upright above the top rail — 12 in
+
+`LANE_TIE_IN` in `packages/rack-engine/src/constants.ts`.
+
+A beam frame stops at its top beam. A drive-in upright does not: the top load
+sits between the uprights and they carry on past it to the tie that braces the
+two sides of the lane together. Trace allows **12 in** above the top load.
+
+It sets the drawn height of a drive-in upright and the room the across-lane
+bracing is drawn in. It does not affect any capacity figure. Confirm against
+the dealer's own frame heights before ordering steel from it.

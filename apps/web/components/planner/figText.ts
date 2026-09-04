@@ -97,9 +97,12 @@ const LOCK_STEP = 4;
  * vertical range to the frame they share, and fitting only the width, keeps
  * them in step while still letting each be as wide as it needs.
  */
-export function fitViewBox(e: Extent, pad = FIG_PAD, lockY?: { y0: number; y1: number }): {
-  viewBox: string; w: number; h: number; aspect: number;
-} {
+export function fitViewBox(
+  e: Extent,
+  pad = FIG_PAD,
+  lockY?: { y0: number; y1: number },
+  lockX?: { x0: number; x1: number },
+): { viewBox: string; w: number; h: number; aspect: number } {
   const b = e.box() ?? { x: 0, y: 0, w: 100, h: 100 };
   // A locked range still has to contain what was drawn: a label that rises
   // above it is cropped along its top edge, and a cropped annotation on a
@@ -112,10 +115,16 @@ export function fitViewBox(e: Extent, pad = FIG_PAD, lockY?: { y0: number; y1: n
   const grow = (over: number) => Math.ceil(Math.max(0, over) / LOCK_STEP) * LOCK_STEP;
   const y0 = lockY ? lockY.y0 - grow(lockY.y0 - (b.y - pad)) : b.y - pad;
   const y1 = lockY ? lockY.y1 + grow(b.y + b.h + pad - lockY.y1) : b.y + b.h + pad;
+  // The same for the width, where a figure has two views to show: a box fitted
+  // to whichever is on screen would resize and re-centre the drawing every time
+  // the reader switched, which is a layout jumping about rather than a drawing
+  // being looked at from a second angle.
+  const x0 = lockX ? lockX.x0 - grow(lockX.x0 - (b.x - pad)) : b.x - pad;
+  const x1 = lockX ? lockX.x1 + grow(b.x + b.w + pad - lockX.x1) : b.x + b.w + pad;
   const h = Math.max(1, y1 - y0);
-  const w = Math.max(1, b.w + pad * 2);
+  const w = Math.max(1, x1 - x0);
   return {
-    viewBox: `${(b.x - pad).toFixed(1)} ${y0.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}`,
+    viewBox: `${x0.toFixed(1)} ${y0.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)}`,
     w, h, aspect: w / h,
   };
 }
@@ -256,6 +265,15 @@ export function fitFigure<T>(
   targetPx = FIG_TEXT.anno,
   /** Fixes the vertical range, for figures that have to stay comparable. */
   lockY?: (font: number) => { y0: number; y1: number },
+  /** Fixes the horizontal range, for a figure with more than one view. */
+  lockX?: (font: number) => { x0: number; x1: number },
+  /**
+   * Draws the figure's other views into the same extent, for their bounds only.
+   * A figure that can be looked at two ways has to be boxed for both, or the
+   * box resizes when the reader switches — and the drawing slides across the
+   * page instead of turning on the spot.
+   */
+  measureAlso?: (font: number, ext: Extent, widthPx: number) => void,
 ): FittedFigure<T> {
   let font = 12, fitted = { viewBox: '0 0 100 100', w: 100, h: 100, aspect: 1 };
   let drawn = undefined as T;
@@ -264,7 +282,8 @@ export function fitFigure<T>(
   for (let pass = 0; pass < 3; pass++) {
     const ext = newExtent();
     drawn = draw(font, ext, widthPx);
-    fitted = fitViewBox(ext, FIG_PAD, lockY?.(font));
+    measureAlso?.(font, ext, widthPx);
+    fitted = fitViewBox(ext, FIG_PAD, lockY?.(font), lockX?.(font));
     // The shape decides the width, the width decides the units a pixel is
     // worth, and the units decide the labels — which move the shape. Three
     // passes settle it; the third moves the font by well under a per cent.

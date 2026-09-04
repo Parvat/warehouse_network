@@ -3,9 +3,11 @@
 import { memo, useState } from 'react';
 import { FigBoxEl } from './figBox';
 import {
-  EL_FRAME, FIG_TEXT, elevationFrameY, elevationPpi, elBox, fitFigure, type Extent, type FigBox,
+  EL_FRAME, FIG_PAD, FIG_TEXT, elevationFrameY, elevationPpi, elBox, fitFigure, type Extent, type FigBox,
 } from './figText';
-import { FLUE_IN, LANE_CLEARANCE_IN, type RackSpec } from '@trace/rack-engine';
+import {
+  FLUE_IN, LANE_CLEARANCE_IN, laneFrameHeightIn, type RackSpec,
+} from '@trace/rack-engine';
 
 /**
  * Fig. 2 — elevation, one bay.
@@ -92,21 +94,32 @@ function ElevationFigure({
    */
   const laneIn = palletWidthIn + LANE_CLEARANCE_IN;
   const depthAcrossIn = lane ? palletDepthIn * deep : palletDepthIn;
-  const spanIn = view === 'depth' ? depthAcrossIn : lane ? laneIn : beam;
-  const spanPx = spanIn * ppi;
-  const X0 = CX - spanPx / 2, X1 = CX + spanPx / 2;
-  const across = view === 'depth' ? 1 : lane ? 1 : ppb;
-  const unitIn = view === 'depth' ? palletDepthIn : palletWidthIn;
-  const gapIn = view === 'depth' ? 0 : (spanIn - across * unitIn) / (across + 1);
   // A rail is a light section along the inside face of each upright; a beam
   // spans between them. Only one of the two is ever drawn.
   const railPx = Math.max(2.5, 3 * ppi);
 
   const spY = FL - clearHeightFt * 12 * ppi;          // sprinkler line
   const clY = FL - spec.usableHeightIn * ppi;         // top of storable height
-  const topY = FL - spec.frameHeightIn * ppi;         // top of the frame
+  // A lane's upright is not a beam frame: it runs past the top rail and the
+  // load on it to the tie that braces the two sides together, which is where
+  // the across bracing goes. A beam frame stops at its top beam.
+  const frameIn = lane
+    ? laneFrameHeightIn({
+      levels: spec.levels, levelPitchIn: spec.levelPitchIn,
+      loadHeightIn: palletLoadHeightIn,
+    })
+    : spec.frameHeightIn;
+  const topY = FL - frameIn * ppi;                    // top of the frame
 
-  const fit = fitFigure(box ?? elBox(2, 1), (fAnno, ext) => {
+  const render = (v: ElevationView, fAnno: number, ext: Extent) => {
+  const spanIn = v === 'depth' ? depthAcrossIn : lane ? laneIn : beam;
+  const spanPx = spanIn * ppi;
+  const X0 = CX - spanPx / 2, X1 = CX + spanPx / 2;
+  // Along a lane there is a pallet at every position down it; along a row
+  // there is one, seen end on.
+  const across = v === 'depth' ? (lane ? deep : 1) : lane ? 1 : ppb;
+  const unitIn = v === 'depth' ? palletDepthIn : palletWidthIn;
+  const gapIn = v === 'depth' ? 0 : (spanIn - across * unitIn) / (across + 1);
   const fDim = fAnno, fTiny = fAnno;
 
   // The floor, the sprinkler line and the clearance band run the full width of
@@ -153,11 +166,11 @@ function ElevationFigure({
     ext.add(CL, spY - 7);
   }
 
-  // A drive-in lane is loaded from a truck standing in it, so the floor under
-  // the lowest rail is the truck's path and carries nothing. Everything else
-  // stores at floor level as well as on the levels above it.
-  const first = lane ? 1 : 0;
-  for (let i = first; i < spec.levels; i++) {
+  // The floor is a storage level. A drive-in truck drives *between* the
+  // uprights and puts the first pallet on the slab — it does not drive over
+  // anything — so the lane stores at floor level exactly as selective racking
+  // does, and as a cantilever stores on its base.
+  for (let i = 0; i < spec.levels; i++) {
     const baseY = FL - i * spec.levelPitchIn * ppi;
     const ph = palletLoadHeightIn * ppi;
     // The engine puts the top beam's upper face exactly at the top of the
@@ -167,12 +180,18 @@ function ElevationFigure({
     // number typed in here is how the drawing and the frame came apart before.
     const bTop = Math.max(topY, baseY - Math.max(4, spec.beamFaceIn * ppi));
     const bh = baseY - bTop;
-    if (lane) {
-      // Rails, not a beam: a short section on the inside face of each upright,
-      // which is what the pallet actually rests on.
-      for (const rx of [X0, X1 - railPx]) {
-        levels.push(<rect key={key++} x={rx} y={baseY - railPx} width={railPx} height={railPx}
-          fill={PINE} />);
+    if (lane && i > 0) {
+      // Rails, not a beam: what the pallet actually rests on. Seen end on they
+      // are a section on the inside face of each upright; seen along the lane
+      // they are the continuous run the pallets sit on all the way down it.
+      if (v === 'depth') {
+        levels.push(<rect key={key++} x={X0 - colPx / 2} y={baseY - railPx}
+          width={spanPx + colPx} height={railPx} fill={PINE} />);
+      } else {
+        for (const rx of [X0, X1 - railPx]) {
+          levels.push(<rect key={key++} x={rx} y={baseY - railPx} width={railPx} height={railPx}
+            fill={PINE} />);
+        }
       }
     } else if (i > 0) {
       // the floor level carries no beams
@@ -187,38 +206,101 @@ function ElevationFigure({
       levels.push(<rect key={key++} x={px} y={baseY - deck} width={pwPx} height={deck}
         fill={KRAFT_2} stroke={KRAFT_EDGE} strokeWidth={1} />);
     }
-    ext.text({ x: X1 + colPx + 8, y: baseY - ph / 2 + 3, size: fTiny, text: `L${i + 1}` });
-    levels.push(<text key={key++} x={X1 + colPx + 8} y={baseY - ph / 2 + 3}
-      fontFamily="JetBrains Mono" fontSize={fTiny} fill={MUT}>L{i + 1}</text>);
+    // A lane's levels are its rails, and the floor is not one of them — so it
+    // is named for what it is, the way a cantilever's base is.
+    const label = lane ? (i === 0 ? 'FLOOR' : `L${i}`) : `L${i + 1}`;
+    // Clear of the next row's upright, which stands beyond the flue in a
+    // section through the row and would otherwise be written over.
+    const lx = X1 + colPx + 8 + (v === 'depth' && !lane ? FLUE_IN * ppi + colPx : 0);
+    ext.text({ x: lx, y: baseY - ph / 2 + 3, size: fTiny, text: label });
+    levels.push(<text key={key++} x={lx} y={baseY - ph / 2 + 3}
+      fontFamily="JetBrains Mono" fontSize={fTiny} fill={MUT}>{label}</text>);
   }
 
-  for (const fx of [X0 - colPx, X1]) {
-    frames.push(<rect key={key++} x={fx} y={topY} width={colPx} height={FL - topY} fill={PINE} />);
-    let zz = '', d = true;
-    const cxm = fx + colPx / 2;
-    // A drive-in upright cannot be braced across the lane below the top level —
-    // the bracing would be in the truck's path — so its own zig-zag is the
-    // depth bracing seen edge on, and the across bracing sits above.
-    for (let y = topY + 12; y < (lane ? topY + 12 : FL - 10); y += 26) {
-      zz += d
-        ? `M${cxm - colPx * 0.4} ${y.toFixed(1)}L${cxm + colPx * 0.4} ${(y + 26).toFixed(1)}`
-        : `M${cxm + colPx * 0.4} ${y.toFixed(1)}L${cxm - colPx * 0.4} ${(y + 26).toFixed(1)}`;
-      d = !d;
+  /**
+   * Bracing between two uprights: a horizontal tie at each panel line and a
+   * diagonal between them, reversing each panel, so every panel reads as a Z.
+   * That is what a frame looks like from the side, and it is the detail that
+   * makes the depth view worth drawing.
+   */
+  const zBrace = (x0: number, x1: number, yBottom: number, yTop: number) => {
+    const h = yBottom - yTop;
+    if (h < 8 || x1 - x0 < 4) return;
+    const panels = Math.max(1, Math.round(h / Math.max(18, (x1 - x0) * 1.1)));
+    const step = h / panels;
+    for (let k = 0; k <= panels; k++) {
+      const y = yBottom - k * step;
+      frames.push(<line key={key++} x1={x0} y1={y} x2={x1} y2={y}
+        stroke={PINE} strokeWidth={1.2} opacity={0.85} />);
     }
-    frames.push(<path key={key++} d={zz} stroke={PINE} strokeWidth={1.4} fill="none" opacity={0.65} />);
+    for (let k = 0; k < panels; k++) {
+      const y0 = yBottom - k * step, y1 = y0 - step;
+      const left = k % 2 === 0;
+      frames.push(<line key={key++} x1={left ? x0 : x1} y1={y0} x2={left ? x1 : x0} y2={y1}
+        stroke={PINE} strokeWidth={1.2} opacity={0.7} />);
+    }
+  };
+
+  /*
+   * Where the uprights stand, which is not the same in the two views.
+   *
+   *   front       one either side of the bay or the lane
+   *   depth, bay  the frame seen from the side: two uprights a frame depth
+   *               apart, with the pallet overhanging both
+   *   depth, lane a pair at every pallet position down the lane
+   */
+  const fdPx = spec.frameDepthIn * ppi;
+  const uprights = v === 'front'
+    ? [X0 - colPx, X1]
+    : lane
+      ? Array.from({ length: deep + 1 },
+        (_, k) => X0 + k * palletDepthIn * ppi - colPx / 2)
+      : [CX - fdPx / 2 - colPx / 2, CX + fdPx / 2 - colPx / 2];
+
+  for (const fx of uprights) {
+    frames.push(<rect key={key++} x={fx} y={topY} width={colPx} height={FL - topY} fill={PINE} />);
+    // In the front view the frame's own depth bracing is seen edge on, which is
+    // a zig-zag inside the upright. In the depth view it is seen square on, and
+    // it is drawn properly between the uprights below.
+    if (v === 'front') {
+      let zz = '', d = true;
+      const cxm = fx + colPx / 2;
+      for (let y = topY + 12; y < FL - 10; y += 26) {
+        zz += d
+          ? `M${cxm - colPx * 0.4} ${y.toFixed(1)}L${cxm + colPx * 0.4} ${(y + 26).toFixed(1)}`
+          : `M${cxm + colPx * 0.4} ${y.toFixed(1)}L${cxm - colPx * 0.4} ${(y + 26).toFixed(1)}`;
+        d = !d;
+      }
+      frames.push(<path key={key++} d={zz} stroke={PINE} strokeWidth={1.4} fill="none"
+        opacity={0.65} />);
+    }
     frames.push(<rect key={key++} x={fx - 6} y={FL - 5} width={colPx + 12} height={5} fill={INK} />);
   }
 
-  if (view === 'depth' && !lane) {
+  if (v === 'depth') {
+    // The bracing, square on. A bay's frame is braced its full height; a lane's
+    // is tied above the top rail, because everything below it is the lane the
+    // truck works in.
+    const braceBottom = lane
+      ? FL - ((spec.levels - 1) * spec.levelPitchIn + palletLoadHeightIn) * ppi
+      : FL - 4;
+    for (let k = 0; k + 1 < uprights.length; k++) {
+      zBrace(uprights[k]! + colPx, uprights[k + 1]!, braceBottom, topY + 2);
+    }
+  }
+
+  if (v === 'depth' && !lane) {
     // Looking along the row. The frame is narrower than the pallet it carries,
     // which is the whole point of the view: a 42 in frame under a 48 in pallet,
     // and a 9 in flue to the row behind it.
-    const fdPx = spec.frameDepthIn * ppi;
     const overPx = (palletDepthIn - spec.frameDepthIn) * ppi / 2;
     const flue = FLUE_IN * ppi;
-    frames.push(<rect key={key++} x={CX - fdPx / 2} y={topY} width={fdPx} height={FL - topY}
-      fill="none" stroke={PINE} strokeWidth={1.2} strokeDasharray="4 3" />);
-    // the next row across the flue, which is what the flue is a gap to
+    // Above everything, including the load standing proud of the frame.
+    const topLoadY = Math.min(topY,
+      FL - ((spec.levels - 1) * spec.levelPitchIn + palletLoadHeightIn) * ppi);
+    // The two uprights of the frame are drawn above, at the frame depth; what
+    // is left to show here is the row behind the flue, which is what the flue
+    // is a gap to.
     const nx = X1 + flue;
     frames.push(<rect key={key++} x={nx} y={topY} width={colPx} height={FL - topY} fill={PINE} />);
     ext.add(nx + colPx, topY);
@@ -231,14 +313,14 @@ function ElevationFigure({
       fontFamily="JetBrains Mono" fontSize={fDim} fill={BLUE}>FLUE {FLUE_IN}&#34;</text>);
 
     // and the overhang, which is why the frame is the smaller figure
-    ext.text({ x: CX, y: topY - 8, size: fTiny, anchor: 'middle',
+    ext.text({ x: CX, y: topLoadY - 8, size: fTiny, anchor: 'middle',
       text: `FRAME ${spec.frameDepthIn}" · ${(overPx / ppi).toFixed(0)}" OVER EACH SIDE` });
-    dims.push(<text key={key++} x={CX} y={topY - 8} textAnchor="middle"
+    dims.push(<text key={key++} x={CX} y={topLoadY - 8} textAnchor="middle"
       fontFamily="JetBrains Mono" fontSize={fTiny} fill={MUT}>
       FRAME {spec.frameDepthIn}&#34; · {(overPx / ppi).toFixed(0)}&#34; OVER EACH SIDE</text>);
   }
 
-  if (view === 'depth' && lane) {
+  if (v === 'depth' && lane) {
     // Along the lane: the pallets one behind another on the rails, and the end
     // the truck comes in at — one for drive-in, both for drive-through.
     const ends = openEnds >= 2 ? [X0, X1] : [X0];
@@ -258,32 +340,14 @@ function ElevationFigure({
     }
   }
 
-  if (lane && view === 'front') {
-    // Horizontal and diagonal bracing between the two uprights, above the top
-    // level — which is where a drive-in structure is tied across, because
-    // everything below it is the lane the truck works in.
-    const braceTop = FL - (spec.levels - 1) * spec.levelPitchIn * ppi - palletLoadHeightIn * ppi;
-    const yy = [braceTop, (braceTop + topY) / 2, topY + 2].filter((y) => y > topY - 1);
-    for (const y of yy) {
-      frames.push(<line key={key++} x1={X0} y1={y} x2={X1} y2={y}
-        stroke={PINE} strokeWidth={1.4} />);
-    }
-    for (let i = 0; i + 1 < yy.length; i++) {
-      const [a, b] = [yy[i]!, yy[i + 1]!];
-      frames.push(<line key={key++} x1={i % 2 ? X1 : X0} y1={a} x2={i % 2 ? X0 : X1} y2={b}
-        stroke={PINE} strokeWidth={1.2} opacity={0.75} />);
-    }
-
-    // and the path the truck takes, under all of it
-    const ty = FL - 6;
-    frames.push(<line key={key++} x1={X0 + 3} y1={ty} x2={X1 - 3} y2={ty}
-      stroke={RED} strokeWidth={1} strokeDasharray="5 3" />);
-    frames.push(<path key={key++}
-      d={`M${(X1 - 3).toFixed(1)} ${ty}l-4 -3m4 3l-4 3`}
-      stroke={RED} strokeWidth={1.1} fill="none" />);
-    ext.text({ x: CX, y: FL - 11, size: fTiny, text: 'TRUCK', anchor: 'middle' });
-    frames.push(<text key={key++} x={CX} y={FL - 11} textAnchor="middle"
-      fontFamily="JetBrains Mono" fontSize={fTiny} fill={RED}>TRUCK</text>);
+  if (lane && v === 'front') {
+    // Tied across above the top rail, which is where a drive-in structure is
+    // braced: everything below is the lane the truck works in. The truck itself
+    // drives into the page here, so there is no path to draw across the view —
+    // it is the depth section and the plan that show where it goes.
+    const braceBottom = FL - (spec.levels - 1) * spec.levelPitchIn * ppi
+      - palletLoadHeightIn * ppi;
+    zBrace(X0, X1, braceBottom, topY + 2);
   }
 
   const dx = X0 - colPx - 26;
@@ -292,11 +356,11 @@ function ElevationFigure({
   dims.push(<line key={key++} x1={dx - 5} y1={FL} x2={dx + 5} y2={FL} stroke={BLUE} />);
   ext.text({
     x: dx - 9, y: (topY + FL) / 2, size: fDim, anchor: 'middle', rotate: -90,
-    text: `FRAME ${(spec.frameHeightIn / 12).toFixed(0)}'-0"`,
+    text: `FRAME ${(frameIn / 12).toFixed(0)}'-0"`,
   });
   dims.push(<text key={key++} transform={`translate(${(dx - 9).toFixed(1)},${((topY + FL) / 2).toFixed(1)}) rotate(-90)`}
     textAnchor="middle" fontFamily="JetBrains Mono" fontSize={fDim} fill={BLUE}>
-    FRAME {(spec.frameHeightIn / 12).toFixed(0)}&#39;-0&#34;</text>);
+    FRAME {(frameIn / 12).toFixed(0)}&#39;-0&#34;</text>);
 
   if (spec.levels > 1) {
     const p0 = FL, p1 = FL - spec.levelPitchIn * ppi, px2 = X1 + colPx + 52;
@@ -319,7 +383,7 @@ function ElevationFigure({
   dims.push(<line key={key++} x1={X1} y1={FL + 25} x2={X1} y2={FL + 35} stroke={BLUE} />);
   // What that dimension is. A lane is measured across; a beam is not there to
   // measure in one, and the depth view is measuring the row, not the bay.
-  const acrossText = view === 'depth'
+  const acrossText = v === 'depth'
     ? `${lane ? `${deep} × ` : ''}${palletDepthIn}" PALLET`
     : lane ? `LANE ${laneIn}"` : `BEAM ${beam}"`;
   ext.text({ x: CX, y: FL + 44, size: fDim, text: acrossText, anchor: 'middle' });
@@ -349,7 +413,17 @@ function ElevationFigure({
         )}
       </>
     );
-  }, FIG_TEXT.anno, (font) => elevationFrameY(spY, font));
+  };
+
+  const fit = fitFigure(
+    box ?? elBox(2, 1),
+    (fAnno, ext) => render(view, fAnno, ext),
+    FIG_TEXT.anno,
+    (font) => elevationFrameY(spY, font),
+    undefined,
+    // the other view, for its bounds only — what it draws is thrown away
+    (font, ext) => { render(view === 'front' ? 'depth' : 'front', font, ext); },
+  );
 
   // The caption is the view's, and the way to the other view sits with it. Not
   // a bare chevron: a reader should know what is on the other side of it.

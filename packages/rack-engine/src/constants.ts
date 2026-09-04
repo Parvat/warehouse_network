@@ -215,6 +215,17 @@ export const COLUMN_PENALTY: Record<ColumnWhere, number> = {
  */
 export const LANE_CLEARANCE_IN = 8;
 
+/**
+ * Upright above the top rail of a drive-in lane, in.
+ *
+ * A beam frame stops at its top beam, because the load above it needs nothing
+ * holding it. A drive-in upright does not: the top load sits between the
+ * uprights, and they carry on past it to the tie that braces the two sides
+ * together. Twelve inches is the working figure — another assumption, and
+ * `docs/open-questions.md` records it as one.
+ */
+export const LANE_TIE_IN = 12;
+
 /** How close to a rack face a column has to be to block the pallets behind it, ft. */
 export const COLUMN_FACE_ZONE_FT = 2;
 
