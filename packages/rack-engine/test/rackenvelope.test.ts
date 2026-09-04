@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  AVAILABLE_THREE_QUARTERS, DOCK_APRON_FT, COLUMN_PENALTY, CROSS_AISLE_WIDTH_FT, crossAislesFor,
+  AVAILABLE_THREE_QUARTERS, DOCK_APRON_FT, LANE_CLEARANCE_IN, laneWidthFt, COLUMN_PENALTY, CROSS_AISLE_WIDTH_FT, crossAislesFor,
   TRUCK_AISLE_RANGE_FT, gridColumns, layoutRack, truckAisleCheck, truckAisleFt,
   type ColumnWhere, type RackLayout, type RackLayoutInput, type TruckKind,
 } from '../src/index.js';
@@ -318,4 +318,59 @@ test('all four deductions together, and each one lowers the count', () => {
 
   // and it is still the racking that was drawn, not a scaled guess
   assert.equal(honest.positions, fromLayout(honest));
+});
+
+/* ── 5. a lane is one pallet wide ──────────────────────────────────────── */
+
+test('a drive-in lane is measured by the pallet, not by a beam', () => {
+  // The truck drives inside the rack, so the pallet rests on rails along the
+  // uprights and there is no beam across the lane to measure.
+  const l = layoutRack('drivein', { ...base, palletWidthIn: 40 });
+  assert.equal(l.laneWidthFt, laneWidthFt(40));
+  assert.equal(l.laneWidthFt, (40 + LANE_CLEARANCE_IN) / 12, 'a pallet plus its clearance');
+  assert.equal(l.bayLengthFt, l.laneWidthFt, 'the module along the run is the lane');
+  assert.equal(l.lanesPerBlock, l.bays);
+
+  // lanes × depth × levels, and nothing per bay
+  assert.equal(l.positions, l.rows * l.bays * base.levels);
+  assert.equal(l.rows, l.blocks * l.deep, 'a row here is one pallet of depth in a block');
+});
+
+test('beam length cannot change what a drive-in holds', () => {
+  const a = layoutRack('drivein', { ...base, palletWidthIn: 40, beamLengthIn: 96 });
+  const b = layoutRack('drivein', { ...base, palletWidthIn: 40, beamLengthIn: 144 });
+  assert.equal(a.positions, b.positions, 'there is no beam in a drive-in lane');
+  assert.equal(a.bays, b.bays);
+  assert.equal(a.laneWidthFt, b.laneWidthFt);
+});
+
+test('pallet width does change it', () => {
+  const narrow = layoutRack('drivein', { ...base, palletWidthIn: 40 });
+  const wide = layoutRack('drivein', { ...base, palletWidthIn: 48 });
+  assert.ok(wide.laneWidthFt! > narrow.laneWidthFt!, 'a wider pallet needs a wider lane');
+  assert.ok(wide.bays < narrow.bays, `${narrow.bays} lanes down to ${wide.bays}`);
+  assert.ok(wide.positions < narrow.positions,
+    `${narrow.positions} positions down to ${wide.positions}`);
+});
+
+test('drive-through is the same lane, open at both ends', () => {
+  const l = layoutRack('drivethru', { ...base, palletWidthIn: 40 });
+  assert.equal(l.laneWidthFt, laneWidthFt(40));
+  assert.equal(l.positions, l.rows * l.bays * base.levels);
+});
+
+test('push-back keeps its beams, and everything else is untouched', () => {
+  // Push-back carts run two pallets wide on beams and it is picked from an
+  // aisle, so none of the lane arithmetic applies to it.
+  for (const kind of ['selective', 'doubledeep', 'pushback'] as const) {
+    const l = layoutRack(kind, { ...base, palletWidthIn: 40 });
+    assert.equal(l.laneWidthFt, undefined, `${kind} is measured by its beam`);
+    assert.equal(l.lanesPerBlock, undefined);
+    assert.equal(l.bayLengthFt, (base.beamLengthIn + 3) / 12, `${kind}: a beam bay`);
+
+    const wider = layoutRack(kind, { ...base, palletWidthIn: 48 });
+    assert.equal(wider.bays, l.bays, `${kind}: pallet width does not move the bays`);
+    const longer = layoutRack(kind, { ...base, palletWidthIn: 40, beamLengthIn: 144 });
+    assert.notEqual(longer.bays, l.bays, `${kind}: beam length does`);
+  }
 });

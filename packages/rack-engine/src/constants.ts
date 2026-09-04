@@ -206,6 +206,15 @@ export const COLUMN_PENALTY: Record<ColumnWhere, number> = {
   flue: 0, clear: 0, bay: 1, face: 3, aisle: 5,
 };
 
+/**
+ * Clearance across a drive-in lane, in — total, both sides together.
+ *
+ * The truck drives inside the rack, so the lane has to hold a pallet and leave
+ * the mast room either side of it. Eight inches is the working figure; it is an
+ * assumption, and `docs/open-questions.md` records it as one.
+ */
+export const LANE_CLEARANCE_IN = 8;
+
 /** How close to a rack face a column has to be to block the pallets behind it, ft. */
 export const COLUMN_FACE_ZONE_FT = 2;
 

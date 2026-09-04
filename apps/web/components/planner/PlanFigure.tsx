@@ -59,10 +59,13 @@ export interface PlanFigureProps {
 }
 
 /** What the drawing left out, where it left anything out. */
-function SimplifiedNote({ detail, layout }: { detail: Detail | null; layout: RackLayout }) {
+function SimplifiedNote({ detail, layout, kind }: {
+  detail: Detail | null; layout: RackLayout; kind: 'lane' | 'bay';
+}) {
   const text = detail
     && simplifiedNote(detail, {
       rows: layout.rows, bays: layout.bays, columns: layout.columns.length,
+      unit: kind === 'lane' ? 'lane' : 'bay',
     });
   return text ? <p className="figsimple">{text}</p> : null;
 }
@@ -89,8 +92,9 @@ function PlanFigure(p: PlanFigureProps) {
   const d = detailFor({
     renderedWidthPx: widthPx, buildingLengthFt: p.buildingLengthFt,
     bayLengthFt: L.bayLengthFt,
-    // what full detail would come to, for the element ceiling to cap
-    rows: L.rows, bays: L.bays, deep: L.deep,
+    // what full detail would come to, for the element ceiling to cap. A lane
+    // block is one band whatever its depth; an aisle-picked row is a band each.
+    bands: R.pick === 'lane' ? L.blocks : L.rows, bays: L.bays, deep: L.deep,
     // the closest two columns get, which is what decides whether they can be
     // told apart on the page
     columnSpacingFt: columnSpacingFt(L.columns),
@@ -415,7 +419,7 @@ function PlanFigure(p: PlanFigureProps) {
 
   return (
     <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={p.head}
-      foot={<><SimplifiedNote detail={detail} layout={L} />{p.foot}</>}>
+      foot={<><SimplifiedNote detail={detail} layout={L} kind={R.pick === 'lane' ? 'lane' : 'bay'} />{p.foot}</>}>
     <svg id="plan" viewBox={fit.viewBox}
         style={{ aspectRatio: String(fit.aspect) }}
         preserveAspectRatio="xMidYMid meet" role="img" aria-label={
@@ -435,6 +439,21 @@ function PlanFigure(p: PlanFigureProps) {
  */
 function PlanFigureWithStats(p: PlanFigureProps) {
   const R = rackType(p.kind), L = p.layout;
+  // A lane is counted in lanes. Bays describe a beam, and there is no beam in a
+  // drive-in lane — the pallet rests on rails along the uprights.
+  if (R.onePalletLanes) {
+    return (
+      <PlanFigure {...p} foot={
+        <p className="figstats">
+          {L.blocks} {L.blocks === 1 ? 'BLOCK' : 'BLOCKS'} · {L.bays} LANES
+          {' · '}{L.deep} DEEP · 1 PALLET WIDE
+          {L.baysLostToColumns > 0 ? ` · ${L.baysLostToColumns} LOST TO COLUMNS` : ''}
+          {' · '}{Math.max(0, L.spareFt).toFixed(0)}&#8242; SPARE
+        </p>
+      } />
+    );
+  }
+
   return (
     <PlanFigure {...p} foot={
       <p className="figstats">

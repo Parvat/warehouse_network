@@ -285,6 +285,7 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
     gridXFt: building.columns === 'grid' ? building.gridXFt : undefined,
     gridYFt: building.columns === 'grid' ? building.gridYFt : undefined,
     beamLengthIn: config.beamIn,
+    palletWidthIn: pallet.widthIn,
     palletsPerBay: solved.spec.palletsPerBay,
     levels: solved.spec.levels,
     frameDepthIn: solved.spec.frameDepthIn,
@@ -340,6 +341,7 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
     pallet: {
       kind,
       beamLengthIn: config.beamIn,
+      palletWidthIn: pallet.widthIn,
       palletsPerBay: solved.spec.palletsPerBay,
       levels: solved.spec.levels,
       frameDepthIn: solved.spec.frameDepthIn,

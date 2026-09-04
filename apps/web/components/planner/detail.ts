@@ -56,9 +56,14 @@ export const ELEMENT_CEILING = 2500;
  * extra pallet of depth. Near enough — it decides a threshold, not a layout.
  */
 export function estimateElements(a: {
-  rows: number; bays: number; deep: number;
+  /** Bands the drawing puts down — a row each for selective, a block each for
+   *  drive-in, whose depth is dashed divisions inside one band. */
+  bands: number;
+  /** Modules along each band: bays for a beam type, lanes for a drive-in. */
+  bays: number;
+  deep: number;
 }): number {
-  return Math.max(0, a.rows) * Math.max(0, a.bays) * (2 + Math.max(0, a.deep - 1));
+  return Math.max(0, a.bands) * Math.max(0, a.bays) * (2 + Math.max(0, a.deep - 1));
 }
 
 /**
@@ -70,7 +75,8 @@ export function detailFor(a: {
   renderedWidthPx: number;
   buildingLengthFt: number;
   bayLengthFt: number;
-  rows: number;
+  /** Bands drawn, not rows stored: see `estimateElements`. */
+  bands: number;
   bays: number;
   deep: number;
   columnSpacingFt?: number;
@@ -99,12 +105,15 @@ export function detailFor(a: {
  */
 export function simplifiedNote(d: Detail, a: {
   rows: number; bays: number; columns: number;
+  /** What a module along a band is called here: a bay, or a drive-in lane. */
+  unit?: 'bay' | 'lane';
 }): string | null {
   if (!d.simplified) return null;
   const parts: string[] = [];
   if (d.level === 'banded') {
+    const unit = a.unit === 'lane' ? 'lanes' : 'bays';
     parts.push(`${a.rows.toLocaleString()} rows drawn as bands, `
-      + `${a.bays.toLocaleString()} bays each`);
+      + `${a.bays.toLocaleString()} ${unit} each`);
   }
   if (!d.columnsIndividually && a.columns > 0) {
     parts.push(`${a.columns.toLocaleString()} columns drawn as a grid`);

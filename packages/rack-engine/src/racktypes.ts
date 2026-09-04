@@ -29,6 +29,18 @@ export interface RackType {
   selectivity: string;
   /** True where the material really is frames + beam pairs + wire decks. */
   standardBom: boolean;
+  /**
+   * True where a lane holds one pallet across, on rails, with no beam.
+   *
+   * The truck drives inside the rack, so a beam spanning the lane would be in
+   * its path: the pallet rests on rails along the inside face of each upright
+   * instead. Beam length therefore says nothing about how much these hold, and
+   * the capacity comes from the pallet's own width.
+   *
+   * Push-back is not one of these. Its carts run two pallets wide on beams, and
+   * it is picked from an aisle like selective.
+   */
+  onePalletLanes?: true;
   badge: string;
   blurb: string;
   bestFor: string;
@@ -66,6 +78,7 @@ export const RACK_TYPES: readonly RackType[] = [
   {
     kind: 'drivein', name: 'Drive-in', defaultDeep: 6, minDeep: 2, maxDeep: 10,
     pick: 'lane', openEnds: 1, rotation: 'LIFO', selectivity: '~15%', standardBom: false,
+    onePalletLanes: true,
     badge: 'Maximum density',
     blurb: 'Forklift drives into the rack structure. Ideal for large quantities of the same SKU.',
     bestFor: 'Fewer SKUs with large quantities per SKU',
@@ -75,6 +88,7 @@ export const RACK_TYPES: readonly RackType[] = [
   {
     kind: 'drivethru', name: 'Drive-through', defaultDeep: 6, minDeep: 2, maxDeep: 10,
     pick: 'lane', openEnds: 2, rotation: 'FIFO', selectivity: '~15%', standardBom: false,
+    onePalletLanes: true,
     badge: 'FIFO friendly',
     blurb: 'Access from both sides of the rack. Supports FIFO inventory flow.',
     bestFor: 'FIFO operations with bulk quantities and few SKUs',

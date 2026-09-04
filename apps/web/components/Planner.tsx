@@ -192,9 +192,14 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                     <SelectField label="Forklift" value={m.config.truck}
                       onChange={(v) => m.setTruck(v as TruckKind)}
                       options={m.truckOptions} roomy />
-                    <SelectField label="Beam" value={String(m.config.beamIn)}
-                      onChange={(v) => m.setBeamIn(Number(v))}
-                      options={m.beamOptions.map((b) => [String(b), `${b} in`] as const)} combo />
+                    {/* A drive-in lane has no beam across it — the pallet rests
+                        on rails along the uprights, because a beam would be in
+                        the truck path. So there is nothing to ask. */}
+                    {!m.type.onePalletLanes && (
+                      <SelectField label="Beam" value={String(m.config.beamIn)}
+                        onChange={(v) => m.setBeamIn(Number(v))}
+                        options={m.beamOptions.map((b) => [String(b), `${b} in`] as const)} combo />
+                    )}
                     {m.type.minDeep !== m.type.maxDeep && (
                       <NumField label="Deep" value={m.config.deep ?? m.type.defaultDeep}
                         onChange={m.setDeep} min={m.type.minDeep} max={m.type.maxDeep} narrow />
@@ -290,8 +295,12 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
               ) : (
                 <ElevationFigure spec={spec} clearHeightFt={building.clearHeightFt} boxClass="el"
                   palletWidthIn={m.pallet.widthIn} palletLoadHeightIn={m.pallet.loadHeightIn}
+                  palletDepthIn={m.pallet.depthIn}
+                  lane={m.type.onePalletLanes} deep={layout.deep} openEnds={m.type.openEnds}
                   box={elBox(building.lengthFt, building.widthFt)}
-                  head={<ElHead sub={`${spec.palletsPerBay} pallets / bay`} />} />
+                  sub={m.type.onePalletLanes
+                    ? `1 pallet / lane · ${layout.deep} deep`
+                    : `${spec.palletsPerBay} pallets / bay`} />
               )}
             </div>
           </div>

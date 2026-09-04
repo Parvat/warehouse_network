@@ -1,7 +1,7 @@
 import {
   AVAILABLE_THREE_QUARTERS, BUILDING_COLUMN_IN, COLUMN_FACE_ZONE_FT, COLUMN_PENALTY,
   COLUMN_WIDTH_IN, CROSS_AISLE_WIDTH_FT, crossAislesFor,
-  BUILDING_FT, CROSS_AISLE_SEGMENT_FT, DOCK_APRON_FT, FLUE_IN, GRID_SEARCH_STEP_FT,
+  BUILDING_FT, CROSS_AISLE_SEGMENT_FT, LANE_CLEARANCE_IN, DOCK_APRON_FT, FLUE_IN, GRID_SEARCH_STEP_FT,
   type ColumnWhere,
 } from './constants.js';
 import { crossAisleSpans, fillSegments } from './crossaisles.js';
@@ -36,6 +36,11 @@ export interface RackLayoutInput {
   /** Beam clear span, in — with pallet width this gives pallets per bay. */
   beamLengthIn: number;
   palletsPerBay: number;
+  /**
+   * Pallet width, in. What a drive-in lane is measured by: there is no beam in
+   * one, so beam length says nothing about how many fit across.
+   */
+  palletWidthIn?: number;
   /** Pallet levels including the floor level. */
   levels: number;
   /** Upright frame depth, in. */
@@ -75,6 +80,14 @@ export interface RackLayout {
   wallRows: number;
   positions: number;
   bayLengthFt: number;
+  /**
+   * Width of one lane, ft, where the type is drive-in or drive-through.
+   * Undefined for everything picked from an aisle, which is measured by its
+   * beam.
+   */
+  laneWidthFt?: number;
+  /** Lanes across one block, for the types that have them. */
+  lanesPerBlock?: number;
   alongFt: number;
   acrossFt: number;
   usedFt: number;
@@ -176,7 +189,13 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
   // the far side, so the run loses its width outright.
   const alongForBaysFt = Math.max(0, usableAlongFt - crossAisles * CROSS_AISLE_WIDTH_FT);
 
-  const bayLengthFt = (input.beamLengthIn + COLUMN_WIDTH_IN) / 12;
+  // A drive-in lane is one pallet wide plus the room the truck needs either
+  // side of it, because the truck drives inside the rack and the pallet rests
+  // on rails rather than on a beam. Beam length does not come into it.
+  const lanes = R.onePalletLanes === true;
+  const bayLengthFt = lanes
+    ? laneWidthFt(input.palletWidthIn ?? 40)
+    : (input.beamLengthIn + COLUMN_WIDTH_IN) / 12;
   const fd = input.frameDepthIn / 12;
   const flue = FLUE_IN / 12;
   const aisle = input.aisleWidthFt;
@@ -203,12 +222,16 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
     }
   }
 
-  const perBay = input.palletsPerBay * (R.pick === 'aisle' ? deep : 1);
+  // A lane holds one pallet across; a bay holds what the beam carries, and an
+  // aisle-picked type holds that at every pallet of depth.
+  const perBay = lanes ? 1 : input.palletsPerBay * (R.pick === 'aisle' ? deep : 1);
   const positions = Math.round(best.netBays * input.levels * perBay);
 
   return {
     deep, bays: best.bays, rows: best.rows, blocks: best.blocks, wallRows: best.wallRows,
     positions, bayLengthFt,
+    laneWidthFt: lanes ? bayLengthFt : undefined,
+    lanesPerBlock: lanes ? best.bays : undefined,
     alongFt: alongFullFt, acrossFt, usedFt: best.usedFt,
     spareFt: acrossFt - best.usedFt - best.acrossOffsetFt,
     usableAlongFt, unavailableAlongFt,
@@ -419,6 +442,17 @@ function toEnvelope(c: RackColumn, input: RackLayoutInput) {
  * to agree about which foot of floor is a bay: a cross aisle drawn somewhere
  * the count did not put it is a drawing that contradicts its own total.
  */
+/**
+ * How wide one drive-in lane is, ft.
+ *
+ * The pallet, plus the clearance the truck needs to get past it on both sides.
+ * Nothing here comes from a beam: a beam across this lane would be in the
+ * truck's way, so there is not one.
+ */
+export function laneWidthFt(palletWidthIn: number): number {
+  return (Math.max(24, palletWidthIn) + LANE_CLEARANCE_IN) / 12;
+}
+
 export function runSpans(
   usableAlongFt: number, bayLengthFt: number, crossAisles: number, offsetFt: number,
 ): { bayStartsFt: number[]; crossAisleAtFt: number[]; bays: number } {

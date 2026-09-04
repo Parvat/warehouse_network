@@ -313,10 +313,10 @@ export function elevationFrameY(spY: number, font: number): { y0: number; y1: nu
   // top edge. Ten was the offset and the cap height only, which left the pad
   // to be found by growing the frame a step.
   const need = 7 + font * MONO.ascent + FIG_PAD;
-  // Below the floor: the beam dimension at FL+35 and its pad. Set clear of
-  // both so neither elevation has to grow its frame and part company with the
-  // other on scale.
-  return { y0: spY - Math.ceil(need / LOCK_STEP) * LOCK_STEP, y1: EL_FRAME.FL + 48 };
+  // Below the floor: the width dimension at FL+30, the label naming it at
+  // FL+44, and the uniform pad under that. Set clear of the lot, so neither
+  // elevation has to grow its frame and part company with the other on scale.
+  return { y0: spY - Math.ceil(need / LOCK_STEP) * LOCK_STEP, y1: EL_FRAME.FL + 56 };
 }
 
 /** Pixels per inch, from the clear height alone, so both elevations agree. */
