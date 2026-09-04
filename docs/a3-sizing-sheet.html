@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trace — rack sizing sheet</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Oswald:wght@600;700&display=swap" rel="stylesheet">
+<style>
+:root{--zinc:#F4F3EE;--zinc-2:#EAE8E1;--paper:#FFFFFF;--pine:#14392B;--pine-2:#1D5340;--mint:#E8EFEA;
+--ink:#1A1D1B;--ink-2:#3E453F;--steel:#6B726C;--blue:#1B4FD8;--yellow:#F2C230;--flag:#A8341C;--line:#DAD7CE}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--zinc);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1280px;margin:0 auto;padding:0 24px}
+.mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+h1,h2,h3{font-family:'Oswald',sans-serif;font-weight:700;line-height:.98;text-transform:uppercase}
+.tbar{border-bottom:2px solid var(--ink);background:var(--zinc);position:sticky;top:0;z-index:30}
+.tbar .wrap{display:grid;grid-template-columns:auto 1fr auto auto auto;height:60px}
+.tcell{display:flex;flex-direction:column;justify-content:center;padding:0 20px;border-right:1px solid var(--line)}
+.tcell:first-child{padding-left:0}.tcell:last-child{border-right:0}
+.tcell .k{font-family:'IBM Plex Mono';font-size:9px;letter-spacing:.18em;color:var(--steel);text-transform:uppercase}
+.tcell .v{font-family:'IBM Plex Mono';font-size:12px;font-weight:500}
+.logo{font-family:'Oswald';font-weight:700;font-size:24px;letter-spacing:.04em;display:flex;align-items:center;gap:9px}
+.logo b{width:10px;height:24px;background:var(--pine);border-radius:2px}
+.mast{padding:44px 0 30px}
+.mast h1{font-size:clamp(38px,6.2vw,78px)}.mast h1 i{font-style:normal;color:var(--pine)}
+.mast .say{margin-top:16px;max-width:58ch;color:var(--ink-2);font-size:16px}
+.rulerow{display:flex;align-items:center;gap:14px;margin-top:26px;color:var(--steel)}
+.rulerow .ln{flex:1;height:1px;background:var(--line)}
+.rulerow span{font-family:'IBM Plex Mono';font-size:10px;letter-spacing:.2em;text-transform:uppercase}
+.sheet{border:2px solid var(--ink);background:var(--paper)}
+.band{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr) minmax(0,1fr)}
+.band.top{border-bottom:2px solid var(--ink)}
+.band.bot{border-top:2px solid var(--ink)}
+.grp{border-right:1px solid var(--line);display:flex;flex-direction:column}
+.grp:last-child{border-right:0}
+.grptitle{display:flex;align-items:baseline;gap:7px;padding:10px 14px 5px;flex-wrap:wrap}
+.grptitle .no{font-family:'IBM Plex Mono';font-size:10px;color:var(--blue);letter-spacing:.14em}
+.grptitle h3{font-size:13px;letter-spacing:.03em}
+.grptitle .note{font-size:11px;color:var(--steel);letter-spacing:0;text-transform:none;font-family:'IBM Plex Sans'}
+.fields{display:flex;flex-wrap:nowrap;gap:7px;padding:0 14px 12px;align-items:flex-end}
+/* fields share their group's width but never squeeze below their content */
+.f{display:flex;flex-direction:column;gap:3px;flex:1 1 auto;min-width:52px}
+.f.w4{min-width:62px}
+.f.wcombo{min-width:70px}
+.f.w{flex:0 0 auto;min-width:0}
+
+.f label{font-family:'IBM Plex Mono';font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--steel);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.f input::-webkit-outer-spin-button,.f input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.f input[type=number]{-moz-appearance:textfield;appearance:textfield}
+.f select{cursor:pointer}
+.f input,.f select{width:100%;height:29px;padding:0 6px;border:1px solid var(--line);background:var(--zinc-2);border-radius:2px;font-family:'IBM Plex Mono';font-size:12.5px;color:var(--ink);text-align:center}
+.f select{text-align:left;padding-right:2px}
+.f input:focus,.f select:focus{outline:2px solid var(--blue);background:#fff}
+.f[hidden]{display:none}
+.f.hot label{color:var(--blue)}
+.segs{display:flex}
+.segs button{border:1px solid var(--line);border-right:0;background:var(--zinc-2);padding:0 7px;height:29px;cursor:pointer;font-family:'IBM Plex Mono';font-size:8.5px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.segs button:last-child{border-right:1px solid var(--line)}
+.segs button[aria-pressed="true"]{background:var(--pine);color:#fff;border-color:var(--pine)}
+.derive{margin:0 16px 14px;padding:8px 11px;background:var(--zinc-2);border-left:3px solid var(--blue);font-size:12.5px;color:var(--ink-2)}
+.derive b{font-family:'IBM Plex Mono';color:var(--ink)}
+.fromfinder{display:flex;align-items:center;gap:10px;padding:11px 18px;background:var(--mint);
+  border-bottom:1px solid var(--line);font-size:13px;color:var(--pine)}
+.fromfinder[hidden]{display:none}
+.fromfinder b{font-weight:600}
+.fromfinder i{font-style:normal;font-family:'IBM Plex Mono';font-size:11px;color:var(--pine-2);
+  background:var(--paper);border:1px solid var(--line);padding:2px 7px;border-radius:2px;margin-left:4px}
+.stage{padding:16px 16px 12px;background:linear-gradient(var(--zinc-2) 1px,transparent 1px) 0 0/100% 24px,linear-gradient(90deg,var(--zinc-2) 1px,transparent 1px) 0 0/24px 100%,var(--paper)}
+.figs{display:flex;gap:24px;align-items:stretch;justify-content:center;flex-wrap:nowrap}
+.figbox{display:flex;flex-direction:column;min-width:0;position:relative}
+.picker{position:absolute;left:0;top:26px;z-index:5;width:186px;background:var(--paper);
+  border:1px solid var(--ink);border-radius:2px;box-shadow:0 4px 14px rgba(26,29,27,.10)}
+.picker h4{font-family:'IBM Plex Mono';font-size:8.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--steel);font-weight:400;padding:8px 10px 6px;border-bottom:1px solid var(--line)}
+.picker button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);
+  background:transparent;padding:8px 11px;cursor:pointer;font-family:'IBM Plex Sans'}
+.picker button:last-child{border-bottom:0}
+.picker button:hover{background:var(--zinc-2)}
+.picker button[aria-pressed="true"]{background:var(--mint)}
+.picker .nm{display:block;font-size:12px;color:var(--ink)}
+.picker button[aria-pressed="true"] .nm{color:var(--pine);font-weight:500}
+.picker .ct{display:inline-block;font-family:'IBM Plex Mono';font-size:12px;color:var(--ink);margin-top:2px;font-weight:500}
+.picker .dl{display:inline-block;font-family:'IBM Plex Mono';font-size:9.5px;color:var(--steel);margin-left:6px}
+.picker button[aria-pressed="true"] .dl{color:var(--pine-2)}
+.picker .tr{display:flex;gap:6px;margin-top:3px}
+.picker .tr i{font-style:normal;font-family:'IBM Plex Mono';font-size:8.5px;color:var(--steel);
+  background:var(--zinc-2);border:1px solid var(--line);padding:1px 5px}
+.picker .most{font-style:normal;font-family:'IBM Plex Mono';font-size:8px;letter-spacing:.1em;
+  text-transform:uppercase;background:var(--yellow);color:#4A3708;padding:1px 5px;margin-left:6px;border-radius:2px}
+.pknote{padding:8px 10px;border-top:1px solid var(--line);font-size:11px;color:var(--steel);line-height:1.45}
+.picker .rt{float:right;font-family:'IBM Plex Mono';font-size:8.5px;color:var(--steel);letter-spacing:.06em}
+.dealer{padding:22px 18px;text-align:center}
+.dealer p{font-size:13.5px;color:var(--ink-2);max-width:58ch;margin:0 auto}
+.dealer b{display:block;font-family:'Oswald';font-weight:700;text-transform:uppercase;font-size:17px;color:var(--ink);margin-bottom:7px}
+.dealer button{margin-top:14px;border:1px solid var(--pine);background:var(--pine);color:#fff;border-radius:2px;
+  height:40px;padding:0 20px;cursor:pointer;font-family:'IBM Plex Sans';font-size:14px;font-weight:500}
+.figbox.pl{flex:1.75}
+.figbox.el{flex:1;max-width:270px}
+.figbox svg{display:block;width:100%;height:auto;max-height:400px;margin-top:auto}
+.figctl{display:flex;flex-wrap:wrap;gap:7px 10px;align-items:flex-end;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)}
+.figctl .f{width:62px}
+.figctl 
+.figctl .derive{display:none}
+.figctl .f{display:flex;flex-direction:column;justify-content:flex-end}
+.figctl .f label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.figctl{margin-top:auto}
+.cbox input{padding-right:15px;text-align:center}
+.figctl{justify-content:center}
+.cbox{position:relative;display:flex}
+.cbtn{position:absolute;right:0;top:0;height:29px;width:14px;border:0;background:transparent;
+  color:var(--steel);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
+.cbtn:hover{color:var(--pine)}
+.copts{position:absolute;top:calc(100% + 2px);left:0;right:0;z-index:30;margin:0;padding:3px;list-style:none;
+  background:var(--paper);border:1px solid var(--line);border-radius:2px;box-shadow:0 6px 16px rgba(26,29,27,.13);
+  max-height:186px;overflow:auto}
+.copts[hidden]{display:none}
+.copts li{font-family:'IBM Plex Mono';font-size:11.5px;color:var(--ink-2);padding:4px 7px;cursor:pointer;border-radius:2px}
+.copts li:hover{background:var(--mint);color:var(--pine)}
+.copts li[aria-selected="true"]{background:var(--pine);color:#fff}
+.figctl .f label{font-size:8.5px;letter-spacing:.09em}
+.fighead{display:flex;justify-content:space-between;align-items:baseline;gap:16px;margin:0 0 7px}
+.fighead .t,.fighead .r{font-family:'IBM Plex Mono';font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--steel)}
+.placard{margin:0;background:var(--yellow);border:3px solid var(--ink);padding:12px 14px}
+.placard .top{font-family:'Oswald';font-weight:700;font-size:13px;letter-spacing:.09em;border-bottom:2px solid var(--ink);padding-bottom:5px;margin-bottom:8px}
+.pgrid{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
+.pgrid div{display:flex;justify-content:space-between;font-family:'IBM Plex Mono';font-size:12px}
+.pgrid b{font-weight:600}
+.placard .fine{margin-top:9px;font-size:9.5px;line-height:1.35;font-family:'IBM Plex Mono'}
+.flags{margin:0}
+.flag{border-left:3px solid var(--flag);background:#F5E7E3;padding:9px 11px;font-size:12.5px;color:#6B2413;margin-bottom:7px;line-height:1.45}
+.flag b{font-family:'IBM Plex Mono';font-size:10px;letter-spacing:.12em;display:flex;justify-content:space-between;gap:10px;text-transform:uppercase;margin-bottom:3px}
+.flag b i{font-style:normal;opacity:.75}
+.flag.warn{border-left-color:#C07A12;background:#F8F0DF;color:#6B4A0B}
+.flag.note{border-left-color:var(--blue);background:#E9EEFB;color:#1B3A8C}
+.flagcount{display:flex;gap:12px;font-family:'IBM Plex Mono';font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--steel);margin-bottom:9px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.flagcount span b{font-weight:600;color:var(--ink)}
+.summary{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px;border-top:2px solid var(--ink);padding:16px 18px;align-items:start}
+.summary .flags:empty:after{content:'No flags — nothing here needs a second look.';font-size:12.5px;color:var(--steel);display:block;padding-top:4px}
+.bom{margin-top:56px;border:2px solid var(--ink);background:var(--paper)}
+.bomhead{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:14px 18px;border-bottom:2px solid var(--ink)}
+.bomhead h2{font-size:26px}
+.bomhead .sub{font-family:'IBM Plex Mono';font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--steel)}
+.tog{border:1px solid var(--line);background:var(--zinc-2);color:var(--ink-2);width:26px;height:26px;border-radius:2px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0}
+.tog:hover{border-color:var(--pine);color:var(--pine)}
+.tog[aria-expanded="false"] svg{transform:rotate(-90deg)}
+.bomhead button.tog{background:var(--zinc-2);color:var(--ink-2);border-color:var(--line);padding:0}
+.bomhead button{font-family:'IBM Plex Mono';font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;padding:8px 14px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer}
+.bomhead button:hover{background:var(--pine);border-color:var(--pine)}
+table.bomt{width:100%;border-collapse:collapse;font-size:13px}
+table.bomt th{text-align:left;font-family:'IBM Plex Mono';font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--steel);font-weight:400;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--zinc-2)}
+table.bomt td{padding:8px 18px;border-bottom:1px dotted var(--line);vertical-align:top}
+table.bomt td.q,table.bomt td.w,table.bomt th.q,table.bomt th.w{text-align:right;font-family:'IBM Plex Mono';white-space:nowrap}
+table.bomt tr.grp td{background:var(--zinc-2);font-family:'IBM Plex Mono';font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);padding:7px 18px}
+table.bomt td .d{font-size:11.5px;color:var(--steel);display:block;margin-top:1px}
+table.bomt tfoot td{border-top:2px solid var(--ink);border-bottom:0;font-family:'IBM Plex Mono';font-weight:600;padding-top:11px}
+.bomfoot{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line)}
+.bomfoot div{padding:12px 18px;border-right:1px solid var(--line)}
+.bomfoot div:last-child{border-right:0}
+.bomfoot .k{font-family:'IBM Plex Mono';font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--steel)}
+.bomfoot .v{font-family:'IBM Plex Mono';font-size:19px;margin-top:3px}
+.bomnote{padding:12px 18px;border-top:1px solid var(--line);font-size:11.5px;color:var(--steel);line-height:1.6}
+@media (max-width:760px){.bomfoot{grid-template-columns:repeat(2,1fr)}table.bomt th,table.bomt td{padding-left:12px;padding-right:12px}}
+.opts{margin-top:56px}
+.opthead{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:12px}
+.opthead h2{font-size:clamp(28px,3.6vw,44px)}
+.opthead p{color:var(--ink-2);max-width:46ch;font-size:14px}
+.ocar{display:flex;gap:0;overflow-x:auto;scroll-snap-type:x mandatory;border:2px solid var(--ink);border-top:0;background:var(--paper);scrollbar-width:thin}
+.ocar .o{flex:0 0 292px;scroll-snap-align:start}
+.carnav{display:flex;gap:6px}
+.carnav button{width:32px;height:32px;border:1px solid var(--ink);background:var(--paper);color:var(--ink);
+  border-radius:2px;cursor:pointer;font-family:'IBM Plex Mono';font-size:14px;line-height:1}
+.carnav button:hover{background:var(--pine);color:#fff;border-color:var(--pine)}
+.o{border-right:1px solid var(--line);display:flex;flex-direction:column}
+.o:last-child{border-right:0}.o.pick{background:var(--mint)}
+.o .oh{padding:14px 16px 10px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline}
+.o .oh h3{font-size:18px}
+.o .oh .tag{font-family:'IBM Plex Mono';font-size:9px;letter-spacing:.15em;color:var(--steel);text-transform:uppercase}
+.o.pick .oh .tag{color:var(--pine);font-weight:600}
+.o .plan{padding:14px 16px;border-bottom:1px solid var(--line)}
+.o .num{padding:12px 16px 4px}
+.o .num b{font-family:'IBM Plex Mono';font-size:27px;font-weight:500;display:block}
+.o .num span{font-size:11px;color:var(--steel);font-family:'IBM Plex Mono';letter-spacing:.1em;text-transform:uppercase}
+.o .body{padding:8px 16px 14px;font-size:13px;color:var(--ink-2);flex:1}
+.o .cost{padding:8px 16px 14px;font-size:12.5px;color:var(--flag);border-top:1px dotted var(--line)}
+.o .facts{border-top:1px solid var(--line);font-size:12px}
+.o .facts div{display:flex;justify-content:space-between;padding:6px 16px;border-bottom:1px dotted var(--line)}
+.o .facts div span:last-child{font-family:'IBM Plex Mono'}
+.ruled{margin-top:26px;border:1px solid var(--line);border-left:3px solid var(--ink);padding:14px 18px;background:var(--zinc-2)}
+.ruled h4{font-family:'IBM Plex Mono';font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--steel);margin-bottom:8px}
+.ruled li{list-style:none;font-size:13px;color:var(--ink-2);padding:4px 0 4px 18px;position:relative}
+.ruled li:before{content:'╳';position:absolute;left:0;color:var(--flag);font-size:10px;top:7px}
+footer{margin-top:72px;border-top:2px solid var(--ink);padding:22px 0 60px}
+footer .fine{margin-top:14px;font-size:11.5px;color:var(--steel);max-width:82ch;line-height:1.7}
+@media (max-width:1100px){.band{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:1150px){.band{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+@media (max-width:900px){.summary,.band{grid-template-columns:1fr}.grp{border-right:0;border-bottom:1px solid var(--line)}}
+@media (max-width:760px){.figs{flex-direction:column;align-items:stretch}.figbox svg{height:auto;width:100%}
+.sched{grid-template-columns:1fr}.grp{border-right:0}
+.ocar .o{flex:0 0 84%}
+.tbar .wrap{grid-template-columns:auto 1fr auto}.tcell.hide-sm{display:none}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="tbar"><div class="wrap">
+  <div class="tcell"><div class="logo"><b></b>TRACE</div></div>
+  <div class="tcell"><span class="k">Sheet</span><span class="v">Rack sizing / preliminary</span></div>
+  <div class="tcell hide-sm"><span class="k">Units</span><span class="v">Imperial</span></div>
+  <div class="tcell hide-sm"><span class="k">Status</span><span class="v" id="tb-status">Not for construction</span></div>
+  <div class="tcell"><span class="k">Rev</span><span class="v mono" id="tb-rev">A</span></div>
+</div></header>
+
+<main class="wrap">
+<section class="mast">
+  <h1>What racking<br>does this building<i>actually need?</i></h1>
+  <p class="say">Pallet width and beam length set how many pallets sit in a bay. Load height and frame height set the levels. How you pick sets which rack types your stock even allows. Fill the schedule — both drawings redraw as you go.</p>
+  <div class="rulerow"><span>Figs. 1–2</span><span class="ln"></span><span>Live</span></div>
+</section>
+
+<section class="sheet">
+
+  <div class="band top">
+    <div class="grp">
+      <div class="grptitle"><span class="no">01</span><h3>Building</h3><span class="note">the box you are filling</span></div>
+      <div class="fields">
+        <div class="f w4" data-hl="plan"><label for="bl">Length</label><input id="bl" type="number" value="240" min="40" step="5"></div>
+        <div class="f w4" data-hl="plan"><label for="bw">Width</label><input id="bw" type="number" value="120" min="30" step="5"></div>
+        <div class="f" data-hl="shell"><label for="ch">Clear ht</label><input id="ch" type="number" value="28" min="10" step="1"></div>
+        <div class="f w"><label>Sprinklers</label><div class="segs" data-group="sprink">
+          <button type="button" data-v="ceiling" aria-pressed="true">Ceiling</button>
+          <button type="button" data-v="inrack" aria-pressed="false">In-rack</button></div></div>
+      </div>
+    </div>
+    <div class="grp">
+      <div class="grptitle"><span class="no">02</span><h3>Pallet</h3><span class="note">sets beam length and capacity</span></div>
+      <div class="fields">
+        <div class="f" data-hl="frames"><label for="pd">Depth</label><input id="pd" type="number" value="48" min="24" step="1"></div>
+        <div class="f" data-hl="levels"><label for="pw">Width</label><input id="pw" type="number" value="40" min="24" step="1"></div>
+        <div class="f" data-hl="levels"><label for="plh">Load ht</label><input id="plh" type="number" value="52" min="12" step="1"></div>
+        <div class="f w4" data-hl="levels"><label for="pwt">Weight lb</label><input id="pwt" type="number" value="2200" min="100" step="50"></div>
+      </div>
+    </div>
+    <div class="grp">
+      <div class="grptitle"><span class="no">03</span><h3>Configuration</h3><span class="note">how it is laid out</span></div>
+      <div class="fields">
+        <div class="f wcombo"><label for="rk">Rack type</label>
+          <select id="rk"></select></div>
+        <div class="f" id="deepwrap"><label for="dp">Deep</label>
+          <input id="dp" type="number" value="1" min="1" step="1"></div>
+        <div class="f w"><label>Rows run</label><div class="segs" data-group="orient">
+          <button type="button" data-v="length" aria-pressed="true">&#8596;</button>
+          <button type="button" data-v="width" aria-pressed="false">&#8597;</button></div></div>
+        <div class="f w4" data-hl="plan"><label for="ai">Aisle</label><input id="ai" type="number" value="12.5" min="4" step="0.5"></div>
+        <div class="f" data-hl="plan"><label for="fl">Flue</label><input id="fl" type="number" value="6" min="0" step="1"></div>
+        <div class="f wcombo" data-hl="levels"><label for="bm">Beam</label>
+            <div class="cbox"><input id="bm" type="text" inputmode="decimal" value="96" autocomplete="off">
+            <button class="cbtn" type="button" data-for="bm" aria-label="Choose beam length"><svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
+            <ul class="copts" id="bm-opts" hidden></ul></div></div>
+        <div class="f wcombo" data-hl="frames"><label for="fh">Frame</label>
+            <div class="cbox"><input id="fh" type="text" inputmode="decimal" value="20" autocomplete="off">
+            <button class="cbtn" type="button" data-for="fh" aria-label="Choose frame height"><svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
+            <ul class="copts" id="fh-opts" hidden></ul></div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="fromfinder" id="fromfinder" hidden>
+    <svg class="ic" viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="8.6"/></svg>
+    <span>Starting from your rack finder answers &mdash; <b>Selective rack</b> <i></i>. Try any other type below to compare.</span>
+  </div>
+
+  <div class="stage">
+    <div class="figs">
+      <div class="figbox pl"><div class="picker" id="picker"></div>
+        <div class="fighead"><span class="t">Fig. 1 — Building plan</span><span class="r mono" id="planNote">240 × 120 ft</span></div>
+        <svg id="plan" viewBox="0 0 560 250" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="pt pd">
+          <title id="pt">Building plan</title><desc id="pd">Scaled plan showing rack rows, flues, aisles, dock doors and the structural column grid.</desc>
+        </svg>
+      </div>
+      <div class="figbox el">
+        <div class="fighead"><span class="t">Fig. 2 — Elevation, one bay</span><span class="r mono" id="bayNote">2 pallets / bay</span></div>
+        <svg id="elev" viewBox="0 0 560 620" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="et ed">
+          <title id="et">Rack elevation</title><desc id="ed">One rack bay from the front with frames, beam levels, pallets, clearances and dimensions.</desc>
+          <g id="g-shell" data-hl="shell"></g><g id="g-levels" data-hl="levels"></g>
+          <g id="g-frames" data-hl="frames"></g><g id="g-dims" data-hl="dims"></g>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="placard">
+      <div class="top">RACK CONFIGURATION — PRELIMINARY</div>
+      <div class="pgrid">
+        <div><span>Beam</span><b id="p-beam">96 in</b></div>
+        <div><span>Pallets / bay</span><b id="p-ppb">2</b></div>
+        <div><span>Beam cap / pair</span><b id="p-bcap">4,400 lb</b></div>
+        <div><span>Frame depth</span><b id="p-depth">42 in</b></div>
+        <div><span>Frame height</span><b id="p-fh">20 ft</b></div>
+        <div><span>Levels</span><b id="p-lv">4</b></div>
+        <div><span>Level pitch</span><b id="p-pitch">63 in</b></div>
+        <div><span>Frame cap</span><b id="p-fcap">17,600 lb</b></div>
+        <div><span>Rotation</span><b id="p-rot">FIFO or LIFO</b></div>
+        <div><span>Pallet positions</span><b id="p-pos">2,592</b></div>
+      </div>
+      <p class="fine">PRELIMINARY SIZING ONLY. NOT A LOAD RATING. CAPACITIES TO BE CONFIRMED BY A QUALIFIED ENGINEER PRIOR TO INSTALLATION.</p>
+    </div>
+    <div class="flags" id="flags"></div>
+  </div>
+</section>
+
+<section class="bom">
+  <div class="bomhead">
+    <div style="display:flex;align-items:baseline;gap:12px"><button type="button" id="bomtog" class="tog" aria-expanded="false"><svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button><h2>Bill of materials</h2><span class="sub" id="bomsub">Counted from Fig. 1 as drawn</span></div>
+    <button type="button" id="bomcsv">Download CSV</button>
+  </div>
+  <div id="bomdealer" hidden></div>
+  <div id="bombody-wrap" hidden><table class="bomt">
+    <thead><tr><th>Item</th><th class="q">Qty</th><th class="w">Unit lb</th><th class="w">Total lb</th></tr></thead>
+    <tbody id="bombody"></tbody>
+  </table>
+  <div class="bomfoot">
+    <div><div class="k">Pallet positions</div><div class="v" id="b-pos">—</div></div>
+    <div><div class="k">Line items</div><div class="v" id="b-lines">—</div></div>
+    <div><div class="k">Steel weight</div><div class="v" id="b-wt">—</div></div>
+    <div><div class="k">Truckloads approx</div><div class="v" id="b-trucks">—</div></div>
+  </div>
+  </div><p class="bomnote">Counted from the layout as drawn — change any input above and this recounts. Quantities follow standard practice: a row of N bays takes N+1 upright frames, beams are supplied in pairs, and the floor level carries no beams or decking. Unit weights are typical figures for sizing freight only; confirm against your supplier&#39;s catalogue before ordering. Accessories, splices, shims, seismic bracing and permit drawings are not included.</p>
+</section>
+
+
+</main>
+
+<footer><div class="wrap">
+  <div class="rulerow"><span>Trace — warehouse layout, procurement and lifecycle</span><span class="ln"></span><span id="f-rev">Rev A</span></div>
+  <p class="fine">Preliminary sizing guidance generated from the dimensions entered above. Not an engineered design and carries no load rating. Final beam and upright capacities, seismic bracing, base plate and anchor design, flue spacing, sprinkler clearance and egress routing must be determined by a qualified engineer and permitted with the local authority having jurisdiction. Aisle widths are typical right-angle stacking figures — confirm against the spec sheet for the specific truck.</p>
+</div></footer>
+
+<script>
+(function(){
+var S={sprink:'ceiling',rot:'fifo',rack:'selective',orient:'length'},rev=0;
+// deep === lanes stored one behind another with no aisle between them.
+// bomOk marks the types whose material really is upright frames + beam pairs
+// + wire decks; the rest use rails, carts or rollers and go to a dealer.
+var RACKS=[
+ {k:'selective', t:'Selective',     deep:1, minD:1, maxD:1,  pick:'aisle', ends:0, rot:'Any',  sel:'100%', bomOk:true,
+  note:'One pallet deep, picked from the aisle. Every pallet reachable.'},
+ {k:'doubledeep',t:'Double-deep',   deep:2, minD:2, maxD:2,  pick:'aisle', ends:0, rot:'Any',  sel:'50%',  bomOk:false,
+  note:'Two deep, picked from one face with a double-reach truck.'},
+ {k:'pushback',  t:'Push-back',     deep:3, minD:2, maxD:6,  pick:'aisle', ends:0, rot:'LIFO', sel:'~50%', bomOk:false,
+  note:'Nested carts on inclined rails. Loaded and picked from the same face.'},
+ {k:'drivein',   t:'Drive-in',      deep:6, minD:2, maxD:10, pick:'lane',  ends:1, rot:'LIFO', sel:'~15%', bomOk:false,
+  note:'The truck drives into the lane. One open end.'},
+ {k:'drivethru', t:'Drive-through', deep:6, minD:2, maxD:10, pick:'lane',  ends:2, rot:'FIFO', sel:'~15%', bomOk:false,
+  note:'Open both ends. Loaded one side, picked the other.'},
+ {k:'flow',      t:'Pallet flow',   deep:10,minD:4, maxD:30, pick:'lane',  ends:2, rot:'FIFO', sel:'~15%', bomOk:false,
+  note:'Gravity rollers run the pallets down to the pick face.'}
+];
+var LANE_DEEP={};
+function rack(){ return RACKS.find(function(r){return r.k===S.rack}) || RACKS[0]; }
+function RACKS_HAS(k){ return RACKS.some(function(r){return r.k===k}); }
+var $=function(i){return document.getElementById(i)},n=function(i){return parseFloat($(i).value)||0};
+
+// arriving from the A2 rack finder: adopt its answers as the starting point,
+// but never lock them — this page exists to try the alternatives
+var Q=(function(){var o={};location.search.replace(/^\?/,'').split('&').forEach(function(kv){
+  if(!kv)return; var a=kv.split('='); o[a[0]]=decodeURIComponent(a[1]||'');}); return o;})();
+var FROM_FINDER = Q.from==='finder';
+if(Q.rack && RACKS.some(function(r){return r.k===Q.rack})) S.rack=Q.rack;
+var FRAMES=[8,10,12,14,16,18,20,24,28,32,36,40],BEAMS=[96,108,120,144,168];
+
+document.querySelectorAll('.f[data-hl]').forEach(function(r){
+  var k=r.dataset.hl,inp=r.querySelector('input,select');
+  function on(){var e=$('elev');if(k==='plan'){$('plan').style.outline='2px solid #1B4FD8';}else{e.classList.add('dim');
+    e.querySelectorAll('g[data-hl]').forEach(function(g){g.classList.toggle('on',g.dataset.hl===k)});}r.classList.add('hot')}
+  function off(){$('elev').classList.remove('dim');$('plan').style.outline='';r.classList.remove('hot')}
+  r.addEventListener('mouseenter',on);r.addEventListener('mouseleave',off);
+  if(inp){inp.addEventListener('focus',on);inp.addEventListener('blur',off)}
+});
+document.querySelectorAll('[data-group]').forEach(function(g){
+  g.addEventListener('click',function(e){var b=e.target.closest('button');if(!b)return;
+    g.querySelectorAll('button').forEach(function(x){x.setAttribute('aria-pressed','false')});
+    b.setAttribute('aria-pressed','true');S[g.dataset.group]=b.dataset.v;
+    calc()});
+});
+document.querySelectorAll('input,select').forEach(function(i){i.addEventListener('input',calc);i.addEventListener('change',calc)});
+// A datalist filters its options against the field's current value, so a
+// pre-filled box only ever offers itself. Clear on focus, restore on blur.
+// Native datalist popups are browser chrome and cannot be themed, so this is
+// a small custom dropdown. The field still accepts any typed value.
+var COMBO={bm:BEAMS,fh:FRAMES};
+Object.keys(COMBO).forEach(function(id){
+  var inp=$(id), list=$(id+'-opts'); if(!inp||!list) return;
+  list.innerHTML=COMBO[id].map(function(v){return '<li role="option" data-v="'+v+'">'+v+'</li>'}).join('');
+  function open(){
+    [].forEach.call(list.children,function(li){
+      li.setAttribute('aria-selected', li.dataset.v===String(inp.value).trim() ? 'true':'false');
+    });
+    document.querySelectorAll('.copts').forEach(function(o){o.hidden=true});
+    list.hidden=false;
+  }
+  document.querySelector('.cbtn[data-for="'+id+'"]').addEventListener('click',function(e){
+    e.stopPropagation(); list.hidden ? open() : (list.hidden=true);
+  });
+  list.addEventListener('click',function(e){
+    var li=e.target.closest('li'); if(!li) return;
+    inp.value=li.dataset.v; list.hidden=true; calc();
+  });
+});
+document.addEventListener('click',function(){
+  document.querySelectorAll('.copts').forEach(function(o){o.hidden=true});
+});
+
+function spec(){
+  var pd=n('pd'),pw=n('pw'),plh=n('plh'),wt=n('pwt'),ch=n('ch');
+  var topClear=S.sprink==='inrack'?24:36,usableIn=ch*12-topClear;
+  var beam;
+  var typedB=parseFloat($('bm').value);
+  if(typedB>0){beam=typedB}
+  else{var need=2*pw+12;beam=BEAMS.find(function(b){return b>=need})||BEAMS[BEAMS.length-1]}
+  var ppb=Math.max(1,Math.floor((beam-4)/(pw+4)));
+  var frameDepth=Math.max(24,Math.round(pd-6));
+  var pitch=plh+6+5;
+  var fhIn;
+  var typedF=parseFloat($('fh').value);
+  if(typedF>0){fhIn=typedF*12}
+  else{var best=FRAMES.filter(function(f){return f*12<=usableIn});fhIn=(best.length?best[best.length-1]:FRAMES[0])*12}
+  var levels=Math.max(1,Math.floor(fhIn/pitch));
+  return{pd:pd,pw:pw,plh:plh,wt:wt,ch:ch,topClear:topClear,usableIn:usableIn,beam:beam,ppb:ppb,
+    frameDepth:frameDepth,pitch:pitch,fhIn:fhIn,levels:levels,bcap:ppb*wt,fcap:ppb*wt*levels,
+    L:n('bl'),W:n('bw'),aisle:Math.max(4,n('ai')),flue:Math.max(0,n('fl')),perim:2.5,
+    over:fhIn>usableIn,frameExceeds:fhIn>usableIn};
+}
+
+function drawElev(s){
+  var FL=548,CX=280,sh='',lv='',fr='',dm='';
+  var colIn=3,maxSpanPx=300;
+  var ppi=Math.min((FL-56)/(s.ch*12),maxSpanPx/(s.beam+2*colIn));
+  var colPx=Math.max(3.5,colIn*ppi),spanPx=s.beam*ppi;
+  var X0=CX-spanPx/2,X1=CX+spanPx/2;
+  var gapIn=(s.beam-s.ppb*s.pw)/(s.ppb+1);
+  var spY=FL-s.ch*12*ppi,clY=FL-s.usableIn*ppi,topY=FL-s.fhIn*ppi;
+  var LE=X0-colPx-54,RE=X1+colPx+108;
+  sh+='<line x1="'+(LE+10).toFixed(1)+'" y1="'+FL+'" x2="'+(RE-10).toFixed(1)+'" y2="'+FL+'" stroke="#1A1D1B" stroke-width="3"/>';
+  for(var h=LE+16;h<RE-12;h+=26)sh+='<line x1="'+h.toFixed(1)+'" y1="'+FL+'" x2="'+(h-11).toFixed(1)+'" y2="'+(FL+11)+'" stroke="#DAD7CE" stroke-width="1"/>';
+  sh+='<line x1="'+(LE+10).toFixed(1)+'" y1="'+spY.toFixed(1)+'" x2="'+(RE-10).toFixed(1)+'" y2="'+spY.toFixed(1)+'" stroke="#1A1D1B" stroke-width="1.5" stroke-dasharray="9 5"/>';
+  sh+='<text x="'+(RE-12).toFixed(1)+'" y="'+(spY-7).toFixed(1)+'" text-anchor="end" font-family="IBM Plex Mono" font-size="10" fill="#6B726C">CLEAR HEIGHT '+s.ch+'&#39;-0&#34;</text>';
+  for(var i=0;i<s.levels;i++){
+    var baseY=FL-i*s.pitch*ppi,ph=s.plh*ppi,bh=Math.max(4,5*ppi);
+    if(i>0)lv+='<rect x="'+X0.toFixed(1)+'" y="'+(baseY-bh).toFixed(1)+'" width="'+spanPx.toFixed(1)+'" height="'+bh.toFixed(1)+'" fill="#14392B"/>';
+    for(var p=0;p<s.ppb;p++){
+      var px=X0+(gapIn+p*(s.pw+gapIn))*ppi,pwPx=s.pw*ppi,deck=Math.max(3,4*ppi);
+      lv+='<rect x="'+px.toFixed(1)+'" y="'+(baseY-ph).toFixed(1)+'" width="'+pwPx.toFixed(1)+'" height="'+(ph-deck).toFixed(1)+'" fill="#E8DCC2" stroke="#B08F52" stroke-width="1"/>';
+      lv+='<rect x="'+px.toFixed(1)+'" y="'+(baseY-deck).toFixed(1)+'" width="'+pwPx.toFixed(1)+'" height="'+deck.toFixed(1)+'" fill="#C9A870" stroke="#B08F52" stroke-width="1"/>';
+    }
+    lv+='<text x="'+(X1+colPx+8).toFixed(1)+'" y="'+(baseY-ph/2+3).toFixed(1)+'" font-family="IBM Plex Mono" font-size="9" fill="#6B726C">L'+(i+1)+'</text>';
+  }
+  [X0-colPx,X1].forEach(function(fx){
+    fr+='<rect x="'+fx.toFixed(1)+'" y="'+topY.toFixed(1)+'" width="'+colPx.toFixed(1)+'" height="'+(FL-topY).toFixed(1)+'" fill="#14392B"/>';
+    var zz='',d=true,cxm=fx+colPx/2;
+    for(var y=topY+12;y<FL-10;y+=26){zz+=(d?'M'+(cxm-colPx*.4)+' '+y.toFixed(1)+'L'+(cxm+colPx*.4)+' '+(y+26).toFixed(1):'M'+(cxm+colPx*.4)+' '+y.toFixed(1)+'L'+(cxm-colPx*.4)+' '+(y+26).toFixed(1));d=!d}
+    fr+='<path d="'+zz+'" stroke="#14392B" stroke-width="1.4" fill="none" opacity=".65"/>';
+    fr+='<rect x="'+(fx-6).toFixed(1)+'" y="'+(FL-5)+'" width="'+(colPx+12).toFixed(1)+'" height="5" fill="#1A1D1B"/>';
+  });
+  var gpx=gapIn*ppi;
+  dm+='<line x1="'+X0.toFixed(1)+'" y1="'+(FL+14)+'" x2="'+(X0+gpx).toFixed(1)+'" y2="'+(FL+14)+'" stroke="#A8341C" stroke-width="1"/>';
+  dm+='<line x1="'+(X1-gpx).toFixed(1)+'" y1="'+(FL+14)+'" x2="'+X1.toFixed(1)+'" y2="'+(FL+14)+'" stroke="#A8341C" stroke-width="1"/>';
+  dm+='<text x="'+(X1+colPx+8).toFixed(1)+'" y="'+(FL+17)+'" font-family="IBM Plex Mono" font-size="9" fill="#A8341C">'+gapIn.toFixed(1)+'&#34; CLR</text>';
+  var dx=X0-colPx-26;
+  dm+='<line x1="'+dx.toFixed(1)+'" y1="'+topY.toFixed(1)+'" x2="'+dx.toFixed(1)+'" y2="'+FL+'" stroke="#1B4FD8" stroke-width="1"/>';
+  dm+='<line x1="'+(dx-5).toFixed(1)+'" y1="'+topY.toFixed(1)+'" x2="'+(dx+5).toFixed(1)+'" y2="'+topY.toFixed(1)+'" stroke="#1B4FD8"/>';
+  dm+='<line x1="'+(dx-5).toFixed(1)+'" y1="'+FL+'" x2="'+(dx+5).toFixed(1)+'" y2="'+FL+'" stroke="#1B4FD8"/>';
+  dm+='<text transform="translate('+(dx-9).toFixed(1)+','+((topY+FL)/2).toFixed(1)+') rotate(-90)" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="#1B4FD8">FRAME '+(s.fhIn/12).toFixed(0)+'&#39;-0&#34;</text>';
+  if(s.levels>1){var p0=FL,p1=FL-s.pitch*ppi,px2=X1+colPx+52;
+    dm+='<line x1="'+px2.toFixed(1)+'" y1="'+p1.toFixed(1)+'" x2="'+px2.toFixed(1)+'" y2="'+p0+'" stroke="#1B4FD8"/>';
+    dm+='<line x1="'+(px2-5).toFixed(1)+'" y1="'+p1.toFixed(1)+'" x2="'+(px2+5).toFixed(1)+'" y2="'+p1.toFixed(1)+'" stroke="#1B4FD8"/>';
+    dm+='<line x1="'+(px2-5).toFixed(1)+'" y1="'+p0+'" x2="'+(px2+5).toFixed(1)+'" y2="'+p0+'" stroke="#1B4FD8"/>';
+    dm+='<text transform="translate('+(px2+13).toFixed(1)+','+((p0+p1)/2).toFixed(1)+') rotate(-90)" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="#1B4FD8">PITCH '+s.pitch+'&#34;</text>';}
+  dm+='<line x1="'+X0.toFixed(1)+'" y1="'+(FL+30)+'" x2="'+X1.toFixed(1)+'" y2="'+(FL+30)+'" stroke="#1B4FD8"/>';
+  dm+='<line x1="'+X0.toFixed(1)+'" y1="'+(FL+25)+'" x2="'+X0.toFixed(1)+'" y2="'+(FL+35)+'" stroke="#1B4FD8"/>';
+  dm+='<line x1="'+X1.toFixed(1)+'" y1="'+(FL+25)+'" x2="'+X1.toFixed(1)+'" y2="'+(FL+35)+'" stroke="#1B4FD8"/>';
+  dm+='<text x="'+CX+'" y="'+(FL+47)+'" text-anchor="middle" font-family="IBM Plex Mono" font-size="10" fill="#1B4FD8">BEAM '+s.beam+'&#34; &#183; '+s.ppb+'P &#183; '+s.bcap.toLocaleString()+' LB</text>';
+  // drawn last, so a frame breaking into the sprinkler zone reads as a breach
+  var breach = topY < clY - 0.5;
+  dm+='<rect x="'+(LE+10).toFixed(1)+'" y="'+spY.toFixed(1)+'" width="'+(RE-LE-20).toFixed(1)+'" height="'+(clY-spY).toFixed(1)+'" fill="'+(breach?'#A8341C':'#F2C230')+'" opacity="'+(breach?0.26:0.22)+'"/>';
+  dm+='<line x1="'+(LE+10).toFixed(1)+'" y1="'+clY.toFixed(1)+'" x2="'+(RE-10).toFixed(1)+'" y2="'+clY.toFixed(1)+'" stroke="'+(breach?'#A8341C':'#C9B27A')+'" stroke-width="1" stroke-dasharray="5 3"/>';
+  dm+='<text x="'+(LE+14).toFixed(1)+'" y="'+((spY+clY)/2+3).toFixed(1)+'" font-family="IBM Plex Mono" font-size="8.5" fill="'+(breach?'#A8341C':'#6B726C')+'">'+(breach?'FRAME BREAKS CLEARANCE':'CLEARANCE '+s.topClear+'&#34;')+'</text>';
+
+  var TE=Math.min(spY,topY)-26,BE=FL+58;
+  $('elev').setAttribute('viewBox',LE.toFixed(1)+' '+TE.toFixed(1)+' '+(RE-LE).toFixed(1)+' '+(BE-TE).toFixed(1));
+  $('g-shell').innerHTML=sh;$('g-levels').innerHTML=lv;$('g-frames').innerHTML=fr;$('g-dims').innerHTML=dm;
+}
+
+function drawPlan(s,R,Lo){
+  var PX=74,PY=40,maxW=470,maxH=210,o='';
+  var horiz = S.orient==='length';
+  var dispL = horiz ? s.L : s.W, dispW = horiz ? s.W : s.L;
+  var sc=Math.min(maxW/dispL,maxH/dispW), W=dispL*sc, H=dispW*sc;
+  var G='#14392B', FILL='#E8EFEA', Y='#F2C230', RED='#A8341C', MUT='#6B726C';
+  var fd=s.frameDepth/12, flue=s.flue/12, aisle=Lo.aisle, deep=Lo.deep;
+
+  o+='<rect x="'+PX+'" y="'+PY+'" width="'+W.toFixed(1)+'" height="'+H.toFixed(1)+'" fill="#fff" stroke="#1A1D1B" stroke-width="2.5"/>';
+
+  // dock apron along the "along" axis start
+  var apron=12*sc;
+  o+='<line x1="'+(PX+apron).toFixed(1)+'" y1="'+PY+'" x2="'+(PX+apron).toFixed(1)+'" y2="'+(PY+H).toFixed(1)+'" stroke="#BFBBB0" stroke-width="1" stroke-dasharray="4 3"/>';
+  for(var d=0;d<3;d++) o+='<rect x="'+(PX-4)+'" y="'+(PY+H*(0.18+d*0.32)).toFixed(1)+'" width="5" height="'+(H*0.11).toFixed(1)+'" fill="'+Y+'"/>';
+  o+='<text transform="translate('+(PX+apron/2).toFixed(1)+','+(PY+H/2).toFixed(1)+') rotate(-90)" text-anchor="middle" font-family="IBM Plex Mono" font-size="7.5" fill="'+MUT+'">STAGING</text>';
+
+  var rx=PX+s.perim*sc+apron, rw=Lo.bays*Lo.bayFt*sc;
+  function band(y,thick,label,nDeep){
+    o+='<rect x="'+rx.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+rw.toFixed(1)+'" height="'+thick.toFixed(1)+'" fill="'+FILL+'" stroke="'+G+'" stroke-width=".9"/>';
+    // a row that is more than one pallet deep must read as separate pallet
+    // rows, or it looks the same as selective with a fatter band
+    if(nDeep>1){
+      for(var q=1;q<nDeep;q++){
+        var qy=y+thick*q/nDeep;
+        o+='<line x1="'+rx.toFixed(1)+'" y1="'+qy.toFixed(1)+'" x2="'+(rx+rw).toFixed(1)+'" y2="'+qy.toFixed(1)+'" stroke="'+G+'" stroke-width=".55" stroke-dasharray="5 3"/>';
+      }
+    }
+    for(var k=0;k<=Lo.bays;k++){
+      var bx=rx+k*Lo.bayFt*sc;
+      o+='<rect x="'+(bx-0.8).toFixed(1)+'" y="'+(y-1).toFixed(1)+'" width="1.6" height="'+(thick+2).toFixed(1)+'" fill="'+G+'"/>';
+    }
+    if(label) o+='<text x="'+(PX+W+6)+'" y="'+(y+thick/2+3).toFixed(1)+'" font-family="IBM Plex Mono" font-size="8" fill="'+MUT+'">'+label+'</text>';
+  }
+  function entry(y,thick,side){   // side: -1 above, +1 below
+    var yy = side<0 ? y-4 : y+thick+4, dir = side<0 ? 1 : -1;
+    for(var k=1;k<=3;k++){
+      var ax=rx+rw*k/4;
+      o+='<path d="M'+ax.toFixed(1)+' '+(yy-6*dir).toFixed(1)+'v'+(6*dir)+'m0 0l-3 '+(-3*dir)+'m3 '+(3*dir)+'l3 '+(-3*dir)+'" stroke="'+RED+'" stroke-width="1.1" fill="none"/>';
+    }
+  }
+
+  var y=PY+s.perim*sc;
+  if(R.pick==='aisle'){
+    var single=deep*fd*sc, pair=(deep*fd*2+flue)*sc;
+    if(Lo.wallRows>0){ band(y,single,deep>1?deep+' deep':'wall row',deep); y+=single+aisle*sc; }
+    var pairs=(Lo.rows-Lo.wallRows)/2;
+    for(var i=0;i<pairs;i++){
+      band(y,deep*fd*sc,null,deep);
+      var fy=y+deep*fd*sc;
+      if(flue>0) o+='<rect x="'+rx.toFixed(1)+'" y="'+fy.toFixed(1)+'" width="'+rw.toFixed(1)+'" height="'+Math.max(1.4,flue*sc).toFixed(1)+'" fill="'+Y+'"/>';
+      band(fy+Math.max(1.4,flue*sc),deep*fd*sc,null,deep);
+      y+=pair;
+      if(i<pairs-1||Lo.wallRows>1){
+        o+='<text x="'+(PX+W+6)+'" y="'+(y+aisle*sc/2+3).toFixed(1)+'" font-family="IBM Plex Mono" font-size="7.5" fill="#BFBBB0">'+aisle+'&#8242;</text>';
+      }
+      y+=aisle*sc;
+    }
+    if(Lo.wallRows>1) band(y,single,deep>1?deep+' deep':'wall row',deep);
+  }else{
+    var block=deep*fd*sc;
+    if(R.ends===2) y+=aisle*sc;
+    for(var b2=0;b2<Lo.blocks;b2++){
+      band(y,block,deep+' deep',1);
+      for(var dd=1;dd<deep;dd++){
+        var dy=y+block*dd/deep;
+        o+='<line x1="'+rx.toFixed(1)+'" y1="'+dy.toFixed(1)+'" x2="'+(rx+rw).toFixed(1)+'" y2="'+dy.toFixed(1)+'" stroke="'+G+'" stroke-width=".5" stroke-dasharray="4 3"/>';
+      }
+      entry(y,block,-1);
+      if(R.ends===2) entry(y,block,1);
+      y+=block+aisle*sc;
+    }
+  }
+
+  // overall dimensions
+  o+='<line x1="'+PX+'" y1="'+(PY-18)+'" x2="'+(PX+W).toFixed(1)+'" y2="'+(PY-18)+'" stroke="#1B4FD8"/>';
+  o+='<text x="'+(PX+W/2).toFixed(1)+'" y="'+(PY-24)+'" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="#1B4FD8">'+dispL+'&#8242;-0&#34;</text>';
+  o+='<line x1="'+(PX-20)+'" y1="'+PY+'" x2="'+(PX-20)+'" y2="'+(PY+H).toFixed(1)+'" stroke="#1B4FD8"/>';
+  o+='<text transform="translate('+(PX-26)+','+(PY+H/2).toFixed(1)+') rotate(-90)" text-anchor="middle" font-family="IBM Plex Mono" font-size="11" fill="#1B4FD8">'+dispW+'&#8242;-0&#34;</text>';
+
+  var legY=PY+H+16;
+  o+='<rect x="'+PX+'" y="'+(legY-7)+'" width="9" height="5" fill="'+FILL+'" stroke="'+G+'" stroke-width=".8"/>';
+  o+='<text x="'+(PX+13)+'" y="'+(legY-2)+'" font-family="IBM Plex Mono" font-size="8" fill="'+MUT+'">RACK</text>';
+  if(R.pick==='lane'){
+    o+='<path d="M'+(PX+58)+' '+(legY-4)+'v-6m0 6l-3 -3m3 3l3 -3" stroke="'+RED+'" stroke-width="1.1" fill="none"/>';
+    o+='<text x="'+(PX+66)+'" y="'+(legY-2)+'" font-family="IBM Plex Mono" font-size="8" fill="'+MUT+'">TRUCK ENTRY</text>';
+  }else if(flue>0){
+    o+='<rect x="'+(PX+58)+'" y="'+(legY-7)+'" width="9" height="5" fill="'+Y+'"/>';
+    o+='<text x="'+(PX+71)+'" y="'+(legY-2)+'" font-family="IBM Plex Mono" font-size="8" fill="'+MUT+'">FLUE</text>';
+  }
+  o+='<text x="'+(PX+W).toFixed(1)+'" y="'+(legY-2)+'" text-anchor="end" font-family="IBM Plex Mono" font-size="9" fill="'+MUT+'">'+
+     Lo.rows+' ROWS'+(R.pick==='aisle'&&deep>1?' &#215; '+deep+' DEEP':'')+' &#183; '+Lo.bays+' BAYS/ROW &#183; '+
+     Lo.spareFt.toFixed(0)+'&#8242; SPARE</text>';
+
+  $('plan').setAttribute('viewBox',(PX-42)+' '+(PY-34)+' '+(W+96).toFixed(1)+' '+(H+60).toFixed(1));
+  $('plan').innerHTML='<title>Building plan</title><desc>Plan of the racking layout.</desc>'+o;
+}
+
+/**
+ * Fills the building for one rack type.
+ *
+ *  along  = the axis the rows run down (bays are counted here)
+ *  across = the axis stacked with aisles
+ *
+ * Two families, and the difference is where the truck stands:
+ *   pick:'aisle'  loaded from the row face, so rows sit back to back in
+ *                 pairs with a flue, and the row against each wall must be
+ *                 single — nobody can reach the far side of a pair at a wall.
+ *   pick:'lane'   the truck enters the end of the lane, so a block is
+ *                 laneDeep rows thick and needs a clear aisle at one end
+ *                 (drive-in) or both ends (drive-through, pallet flow).
+ */
+function layout(s,R,deepOverride){
+  var deep = Math.max(R.minD, Math.min(R.maxD, deepOverride || R.deep));
+  var alongFt  = (S.orient==='length' ? s.L : s.W) - s.perim*2 - 12;   // 12 = dock apron
+  var acrossFt = (S.orient==='length' ? s.W : s.L) - s.perim*2;
+  var bayFt = (s.beam+3)/12;
+  var bays  = Math.max(0,Math.floor(alongFt/bayFt));
+  var fd    = s.frameDepth/12, flue = s.flue/12, aisle = s.aisle;
+
+  var rows=0, blocks=0, wallRows=0, used=0;
+
+  if(R.pick==='aisle'){
+    var single = deep*fd;                       // a row against a wall
+    var pair   = deep*fd*2 + flue;              // two rows back to back
+    // wall row + aisle ... pair + aisle ... wall row
+    var left = acrossFt - single*2 - aisle*2;
+    var pairs = Math.max(0, Math.floor((left + aisle)/(pair + aisle)));
+    wallRows = acrossFt >= single*2 + aisle ? 2 : (acrossFt>=single?1:0);
+    rows = wallRows + pairs*2;
+    used = single*wallRows + pairs*pair + (pairs+1)*aisle;
+  }else{
+    var block = deep*fd;
+    // ends===1 → blocks may share an aisle; ends===2 → every block needs its own pair
+    if(R.ends===1){
+      blocks = Math.max(0, Math.floor((acrossFt + aisle)/(block + aisle)));
+      used = blocks*block + Math.max(0,blocks-1)*aisle;
+    }else{
+      blocks = Math.max(0, Math.floor((acrossFt - aisle)/(block + aisle)));
+      used = blocks*block + (blocks+1)*aisle;
+    }
+    rows = blocks*deep;
+  }
+
+  var faces = R.pick==='aisle' ? rows : blocks;      // pick faces, for selectivity
+  // an aisle-picked row is `deep` pallets thick, so each row holds deep times
+  // its face count. Lane blocks already fold depth into `rows` above.
+  var perRow = R.pick==='aisle' ? deep : 1;
+  var positions = Math.round(rows * bays * s.ppb * s.levels * perRow);
+  return {deep:deep, bays:bays, rows:rows, blocks:blocks, wallRows:wallRows,
+          positions:positions, faces:faces, alongFt:alongFt, acrossFt:acrossFt,
+          usedFt:used, spareFt:acrossFt-used, bayFt:bayFt, aisle:aisle};
+}
+function planCard(kind,aisle,rows){
+  var w=220,h=112,PAD=12,o='';
+  var G='#14392B', F='#E8EFEA', Y='#F2C230', M='#6B726C', R='#A8341C';
+  o+='<rect x="1" y="1" width="'+(w-2)+'" height="'+(h-2)+'" fill="#fff" stroke="#1A1D1B" stroke-width="1.4"/>';
+  var x0=PAD+8, x1=w-PAD-8, iw=x1-x0;
+
+  function bar(y,hh,fill){ return '<rect x="'+x0+'" y="'+y.toFixed(1)+'" width="'+iw+'" height="'+hh.toFixed(1)+'" fill="'+(fill||F)+'" stroke="'+G+'" stroke-width=".8"/>'; }
+  function ticks(y,hh,n){ var t=''; for(var k=1;k<n;k++){var bx=x0+iw*k/n; t+='<line x1="'+bx.toFixed(1)+'" y1="'+y.toFixed(1)+'" x2="'+bx.toFixed(1)+'" y2="'+(y+hh).toFixed(1)+'" stroke="'+G+'" stroke-width=".6"/>';} return t; }
+  function arrow(x,y,dir){ var d=dir>0?1:-1; return '<path d="M'+x+' '+y+'h'+(9*d)+'m0 0l'+(-3.5*d)+' -3m'+(3.5*d)+' 3l'+(-3.5*d)+' 3" stroke="'+R+'" stroke-width="1.1" fill="none"/>'; }
+
+  if(kind==='selective'||kind==='narrow'||kind==='vna'){
+    var n = kind==='vna'?7:(kind==='narrow'?5:4);
+    var slot=(h-PAD*2)/n, rd=Math.max(3,slot*0.30);
+    for(var i=0;i<n;i++){ var y=PAD+i*slot;
+      o+=bar(y,rd)+ticks(y,rd,9);
+      o+=bar(y+rd+1.4,rd)+ticks(y+rd+1.4,rd,9);
+      o+='<line x1="'+x0+'" y1="'+(y+rd+0.7).toFixed(1)+'" x2="'+x1+'" y2="'+(y+rd+0.7).toFixed(1)+'" stroke="'+Y+'" stroke-width="1"/>';
+    }
+  } else if(kind==='drivein'||kind==='drivethru'){
+    var lanes=3, slot=(h-PAD*2)/lanes, blk=slot*0.62;
+    for(var i=0;i<lanes;i++){ var y=PAD+i*slot;
+      o+=bar(y,blk);
+      for(var k=1;k<5;k++){var by=y+blk*k/5; o+='<line x1="'+x0+'" y1="'+by.toFixed(1)+'" x2="'+x1+'" y2="'+by.toFixed(1)+'" stroke="'+G+'" stroke-width=".5" stroke-dasharray="3 2"/>';}
+      o+=ticks(y,blk,7);
+      o+=arrow(x0-9, y+blk/2, 1);
+      if(kind==='drivethru') o+=arrow(x1+1, y+blk/2, 1);
+    }
+    o+='<text x="'+PAD+'" y="'+(h-4)+'" font-family="IBM Plex Mono" font-size="7.5" fill="'+R+'">'+(kind==='drivein'?'LIFO · ONE END':'FIFO · BOTH ENDS')+'</text>';
+  } else if(kind==='pushback'){
+    var n2=4, slot2=(h-PAD*2)/n2, rd2=Math.max(4,slot2*0.34);
+    for(var i=0;i<n2;i++){ var y=PAD+i*slot2;
+      o+=bar(y,rd2)+ticks(y,rd2,8);
+      for(var k=0;k<8;k++){var cx=x0+iw*(k+0.5)/8;
+        o+='<circle cx="'+cx.toFixed(1)+'" cy="'+(y+rd2/2).toFixed(1)+'" r="1.5" fill="'+G+'" opacity=".55"/>';}
+    }
+    o+='<text x="'+PAD+'" y="'+(h-4)+'" font-family="IBM Plex Mono" font-size="7.5" fill="'+R+'">LIFO · 2–4 DEEP CARTS</text>';
+  } else { // pallet flow
+    var lanes3=3, slot3=(h-PAD*2)/lanes3, blk3=slot3*0.62;
+    for(var i=0;i<lanes3;i++){ var y=PAD+i*slot3;
+      o+=bar(y,blk3);
+      for(var k=1;k<8;k++){var rx=x0+iw*k/8;
+        o+='<line x1="'+rx.toFixed(1)+'" y1="'+y.toFixed(1)+'" x2="'+rx.toFixed(1)+'" y2="'+(y+blk3).toFixed(1)+'" stroke="'+G+'" stroke-width=".5"/>';}
+      o+='<path d="M'+(x0+6)+' '+(y+blk3/2).toFixed(1)+'H'+(x1-6)+'" stroke="'+R+'" stroke-width="1" stroke-dasharray="4 3"/>';
+      o+=arrow(x1-10, y+blk3/2, 1);
+    }
+    o+='<text x="'+PAD+'" y="'+(h-4)+'" font-family="IBM Plex Mono" font-size="7.5" fill="'+R+'">FIFO · GRAVITY ROLLERS</text>';
+  }
+
+  o+='<text x="'+(w-6)+'" y="'+(h-4)+'" text-anchor="end" font-family="IBM Plex Mono" font-size="7.5" fill="'+M+'">'+aisle+'&#39; AISLE · '+rows+' ROWS</text>';
+  return '<svg viewBox="0 0 '+w+' '+h+'" role="img"><title>Plan sketch, '+kind+'</title>'+o+'</svg>';
+}
+
+var BOM=[];
+function buildBom(s,bands,bays,totalPos){
+  var rows=bands*2,beamLv=Math.max(0,s.levels-1);
+  var frames=rows*(bays+1), beams=rows*bays*beamLv*2, decks=rows*bays*beamLv*s.ppb;
+  var foot=frames*2, anch=foot*2, spac=bands*(bays+1)*2, guards=rows*(bays+1), ends=rows*2, signs=rows;
+  var wFrame=Math.round(7.5*(s.fhIn/12)+22), wBeam=Math.round(.30*s.beam), wDeck=13;
+  var L=[
+    ['g','Structure'],
+    ['Upright frame',(s.fhIn/12)+' ft &#215; '+s.frameDepth+' in deep &#183; '+s.fcap.toLocaleString()+' lb capacity',frames,wFrame],
+    ['Beam',s.beam+' in &#183; '+s.bcap.toLocaleString()+' lb per pair &#183; '+beamLv+' levels &#215; 2 beams',beams,wBeam],
+    ['g','Decking'],
+    ['Wire deck','fits the '+s.pw+' in &#215; '+s.frameDepth+' in opening &#183; '+s.ppb+' per bay level',decks,wDeck],
+    ['g','Anchorage'],
+    ['Footplate','2 per upright frame',foot,3],
+    ['Anchor bolt','2 per footplate &#183; seismic may require more',anch,0.6],
+    ['g','Ties and protection'],
+    ['Row spacer','ties back-to-back rows &#183; holds the '+s.flue+' in flue open',spac,6],
+    ['Column guard','aisle-facing columns',guards,22],
+    ['End-of-row protector','2 per row',ends,40],
+    ['g','Compliance'],
+    ['Load capacity sign','1 per row &#183; required signage',signs,0.5]
+  ];
+  var body='',tot=0,lines=0;
+  L.forEach(function(r){
+    if(r[0]==='g'){body+='<tr class="grp"><td colspan="4">'+r[1]+'</td></tr>';return}
+    var t=r[2]*r[3];tot+=t;lines++;
+    body+='<tr><td>'+r[0]+'<span class="d">'+r[1]+'</span></td><td class="q">'+r[2].toLocaleString()+'</td><td class="w">'+r[3]+'</td><td class="w">'+Math.round(t).toLocaleString()+'</td></tr>';
+  });
+  $('bombody').innerHTML=body;
+  $('b-pos').textContent=totalPos.toLocaleString();
+  $('b-lines').textContent=lines;
+  $('b-wt').textContent=(tot/2000).toFixed(1)+' t';
+  $('b-trucks').textContent=Math.max(1,Math.ceil(tot/40000));
+  $('bomsub').textContent=rows+' rows \u00b7 '+bays+' bays each \u00b7 counted from Fig. 1';
+  BOM=L.filter(function(r){return r[0]!=='g'}).map(function(r){return [r[0],r[1].replace(/&#215;/g,'x').replace(/&#183;/g,'-'),r[2],r[3],Math.round(r[2]*r[3])]});
+}
+document.getElementById('bomcsv').addEventListener('click',function(){
+  var csv='Item,Description,Qty,Unit lb,Total lb\n'+BOM.map(function(r){return '"'+r[0]+'","'+r[1]+'",'+r[2]+','+r[3]+','+r[4]}).join('\n');
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='trace-bom.csv';a.click();
+});
+function calc(){
+  var s=spec();
+  var R=rack();
+  $('dp').min=R.minD; $('dp').max=R.maxD;
+  var wantDeep=parseFloat($('dp').value)||R.deep;
+  if(wantDeep<R.minD||wantDeep>R.maxD){ wantDeep=R.deep; $('dp').value=R.deep; }
+  $('deepwrap').hidden = (R.minD===R.maxD);
+
+  var Lo=layout(s,R,wantDeep);
+
+  // every type, both orientations — so the picker can show the best
+  var save=S.orient, best={pos:-1};
+  var all=RACKS.map(function(r){
+    var a1=layout(s,r,null);
+    S.orient = save==='length'?'width':'length';
+    var a2=layout(s,r,null);
+    S.orient=save;
+    var top=a2.positions>a1.positions?{n:a2.positions,o:'rotated'}:{n:a1.positions,o:''};
+    if(top.n>best.pos) best={pos:top.n,k:r.k};
+    return {r:r,pos:(r.k===S.rack?Lo.positions:a1.positions),alt:top};
+  });
+
+  $('rk').innerHTML=RACKS.map(function(r){
+    return '<option value="'+r.k+'"'+(r.k===S.rack?' selected':'')+'>'+r.t+'</option>'}).join('');
+
+  var base=layout(s,RACKS[0],null).positions;   // selective, as the yardstick
+  var maxPos=Math.max.apply(null,all.map(function(x){return x.pos}));
+  $('picker').innerHTML='<h4>Rack type &middot; rough positions</h4>'+all.map(function(x){
+    var d=x.pos-base, pct=base?Math.round(d/base*100):0;
+    var delta = x.r.k==='selective' ? 'baseline'
+      : (d>0?'+':'')+pct+'% vs selective';
+    return '<button type="button" data-k="'+x.r.k+'" aria-pressed="'+(x.r.k===S.rack)+'">'+
+      '<span class="nm">'+x.r.t+(x.pos===maxPos?'<em class="most">most</em>':'')+'</span>'+
+      '<span class="ct">~'+x.pos.toLocaleString()+'</span>'+
+      '<span class="dl">'+delta+'</span>'+
+      '<span class="tr"><i>'+x.r.sel+' reachable</i><i>'+x.r.rot+'</i></span>'+
+      '</button>';
+  }).join('')+'<div class="pknote" id="pknote"></div>';
+  $('pknote').textContent=R.note;
+
+  $('p-rot').textContent=R.rot;
+  $('p-pos').textContent='~'+Lo.positions.toLocaleString();
+
+  // flags
+  var f=[];
+  if(s.over)f.push(['crit','Height','Frame will not fit','A '+(s.fhIn/12)+' ft frame does not fit under '+(s.usableIn/12).toFixed(1)+' ft of usable height.']);
+  if(s.levels<2)f.push(['crit','Height','One level only','At this load height only a single level fits.']);
+  if(s.aisle<5.5)f.push(['crit','Aisle','Below working width','Nothing turns in to place a pallet at '+s.aisle+' ft.']);
+  if(s.bcap>6000)f.push(['warn','Beam','Heavy beam section','At '+s.bcap.toLocaleString()+' lb per pair you are into heavy sections — check lead time.']);
+  if(Lo.spareFt>Lo.aisle+2)f.push(['note','Layout','Unused width',Lo.spareFt.toFixed(1)+' ft is left over. A slightly narrower aisle may fit another row.']);
+  if(best.k&&best.k!==S.rack)f.push(['note','Layout','More positions available',(RACKS.find(function(r){return r.k===best.k})||{}).t+' would hold about '+best.pos.toLocaleString()+' here.']);
+  var nc=f.filter(function(x){return x[0]==='crit'}).length,nw=f.filter(function(x){return x[0]==='warn'}).length;
+  $('flags').innerHTML=(f.length?'<div class="flagcount"><span>Blocking <b>'+nc+'</b></span><span>Check <b>'+nw+'</b></span><span>Notes <b>'+(f.length-nc-nw)+'</b></span></div>':'')+
+    f.map(function(x){return '<div class="flag '+(x[0]==='crit'?'':x[0])+'"><b>'+x[2]+'<i>'+x[1]+'</i></b>'+x[3]+'</div>'}).join('');
+  $('tb-status').textContent=nc?'Blocking issues':'Not for construction';
+  rev=Math.min(25,rev+1); var rl=String.fromCharCode(65+(rev%26));
+  $('tb-rev').textContent=rl; $('f-rev').textContent='Rev '+rl;
+
+  drawElev(s);
+  drawPlan(s,R,Lo);
+
+  if(R.bomOk){
+    $('bomdealer').hidden=true; document.querySelector('.bomfoot').hidden=false;
+    buildBom(s,Math.max(1,Math.round(Lo.rows/2)),Lo.bays,Lo.positions);
+    $('bomsub').textContent=Lo.rows+' rows \u00b7 '+Lo.bays+' bays each \u00b7 counted from Fig. 1';
+  }else{
+    $('bombody-wrap').hidden=true; document.querySelector('.bomfoot').hidden=true;
+    $('bomdealer').hidden=false;
+    $('bomdealer').innerHTML='<div class="dealer"><b>'+R.t+' is built differently</b>'+
+      '<p>This uses '+(R.k==='flow'?'gravity roller lanes':R.k==='pushback'?'nested carts on inclined rails':R.k==='doubledeep'?'deeper frames and a double-reach truck':'lane rails and arms')+
+      ' rather than beam pairs and wire decking, so the material list is not a count of the same parts. A dealer prices it from the lane depth, the load and the rail spec.</p>'+
+      '<button type="button" onclick="alert(\'Sends this requirement to dealers who supply '+R.t+'.\')">Get a '+R.t.toLowerCase()+' quote</button></div>';
+    $('bomsub').textContent=R.t+' \u00b7 material list comes from the dealer';
+  }
+}
+
+(function(){
+  var t=$('bomtog'), wrap=$('bombody-wrap');
+  t.addEventListener('click',function(){
+    var open=t.getAttribute('aria-expanded')==='true';
+    t.setAttribute('aria-expanded',String(!open)); wrap.hidden=open;
+  });
+  $('rk').addEventListener('change',function(){ S.rack=this.value; var r=rack(); $('dp').value=r.deep; calc(); });
+  $('picker').addEventListener('click',function(e){
+    var b=e.target.closest('button[data-k]'); if(!b) return;
+    S.rack=b.dataset.k; $('dp').value=rack().deep; calc();
+  });
+})();
+(function(){
+  if(Q.aisle) $('ai').value=Q.aisle;
+  ['pd','pw','plh','pwt'].forEach(function(k){ if(Q[k]) $(k).value=Q[k]; });
+  if(FROM_FINDER){
+    var b=$('fromfinder');
+    b.hidden=false;
+    b.querySelector('b').textContent=(rack().t)+' rack';
+    if(Q.match) b.querySelector('i').textContent=Q.match+'% match';
+  }
+})();
+calc();rev=0;$('tb-rev').textContent='A';$('f-rev').textContent='Rev A';
+})();
+</script>
+</body>
+</html>

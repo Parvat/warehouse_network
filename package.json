@@ -1,0 +1,17 @@
+{
+  "name": "trace",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "dev": "pnpm --filter @trace/web dev",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @trace/db generate",
+    "db:migrate": "pnpm --filter @trace/db migrate"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}
