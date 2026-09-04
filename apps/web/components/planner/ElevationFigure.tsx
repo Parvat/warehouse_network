@@ -47,6 +47,8 @@ export interface ElevationFigureProps {
    * where the truck goes.
    */
   lane?: boolean;
+  /** False where a section through the row says nothing this type needs. */
+  depthSection?: boolean;
   /** Pallets deep in a lane, for the depth view. */
   deep?: number;
   /** Open ends: one for drive-in, two for drive-through. */
@@ -69,6 +71,7 @@ function ElevationFigure({
   spec, clearHeightFt, palletWidthIn, palletLoadHeightIn, box,
   labelClearHeight = true, head, boxClass, title, sub,
   lane = false, deep = 1, openEnds = 0, palletDepthIn = spec.frameDepthIn + 6,
+  depthSection = false,
 }: ElevationFigureProps) {
   // Which way the bay is being looked at. Presentation state: it belongs to the
   // component, not to the layout and not to the database.
@@ -128,9 +131,13 @@ function ElevationFigure({
   // the viewBox to clip, which is what full-bleed means here. They are not
   // measured: a mark that defines the edge cannot also be sized by it.
   const BLEED = 600;
-  // Labels that read along those lines hang off the left of the content, which
-  // is the frame's dimension line and its own label.
-  const CL = X0 - colPx - 26 - fAnno * 1.1;
+  // Labels that read along those lines are the building's, not the racking's:
+  // the clear height and the clearance mean the same thing whichever way the
+  // bay is being looked at. So they hang off the widest view's edge, which is
+  // the same in both, rather than off this view's — which moved them across the
+  // figure every time the reader switched.
+  const widestSpanPx = Math.max(lane ? laneIn : beam, depthAcrossIn) * ppi;
+  const CL = CX - widestSpanPx / 2 - colPx - 26 - fAnno * 1.1;
 
   // The assertion, before anything is drawn. A beam whose face runs past the
   // top of its own upright is not a rack anybody can build, so it is not a
@@ -362,20 +369,10 @@ function ElevationFigure({
     textAnchor="middle" fontFamily="JetBrains Mono" fontSize={fDim} fill={BLUE}>
     FRAME {(frameIn / 12).toFixed(0)}&#39;-0&#34;</text>);
 
-  if (spec.levels > 1) {
-    const p0 = FL, p1 = FL - spec.levelPitchIn * ppi, px2 = X1 + colPx + 52;
-    dims.push(<line key={key++} x1={px2} y1={p1} x2={px2} y2={p0} stroke={BLUE} />);
-    dims.push(<line key={key++} x1={px2 - 5} y1={p1} x2={px2 + 5} y2={p1} stroke={BLUE} />);
-    dims.push(<line key={key++} x1={px2 - 5} y1={p0} x2={px2 + 5} y2={p0} stroke={BLUE} />);
-    ext.text({
-      x: px2 + 29, y: p0 - 3, size: fDim, anchor: 'start', rotate: -90,
-      text: `${spec.levelPitchIn}"`,
-    });
-    dims.push(<text key={key++}
-      transform={`translate(${(px2 + 29).toFixed(1)},${(p0 - 3).toFixed(1)}) rotate(-90)`}
-      textAnchor="start" fontFamily="JetBrains Mono" fontSize={fDim} fill={BLUE}>
-      {spec.levelPitchIn}&#34;</text>);
-  }
+  // The level pitch used to be dimensioned out here, fifty units clear of the
+  // frame with no extension lines back to the levels it measured — a rule
+  // floating beside the level markers rather than a dimension on anything. The
+  // figure is on the placard, where it reads as what it is.
 
   ext.add(X0, FL + 35);
   dims.push(<line key={key++} x1={X0} y1={FL + 30} x2={X1} y2={FL + 30} stroke={BLUE} />);
@@ -421,8 +418,11 @@ function ElevationFigure({
     FIG_TEXT.anno,
     (font) => elevationFrameY(spY, font),
     undefined,
-    // the other view, for its bounds only — what it draws is thrown away
-    (font, ext) => { render(view === 'front' ? 'depth' : 'front', font, ext); },
+    // The other view, for its bounds only — what it draws is thrown away. Where
+    // there is only one view there is nothing else to make room for.
+    depthSection
+      ? (font, ext) => { render(view === 'front' ? 'depth' : 'front', font, ext); }
+      : undefined,
   );
 
   // The caption is the view's, and the way to the other view sits with it. Not
@@ -435,10 +435,15 @@ function ElevationFigure({
     <div className="fighead">
       <span className="t">{caption}</span>
       <span className="r mono">{sub}</span>
-      <button type="button" className="figview"
-        onClick={() => setView(view === 'front' ? 'depth' : 'front')}>
-        {view === 'front' ? 'Depth view →' : '← Front view'}
-      </button>
+      {depthSection && (
+        <button type="button" className="figview"
+          onClick={() => setView(view === 'front' ? 'depth' : 'front')}>
+          {/* Short, because the head is only as wide as the drawing and the
+              caption beside it already names the view in full. Both labels are
+              seven characters, so the control does not resize as it is used. */}
+          {view === 'front' ? 'Depth →' : '← Front'}
+        </button>
+      )}
     </div>
   );
 

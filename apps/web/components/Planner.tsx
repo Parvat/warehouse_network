@@ -200,10 +200,9 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                         onChange={(v) => m.setBeamIn(Number(v))}
                         options={m.beamOptions.map((b) => [String(b), `${b} in`] as const)} combo />
                     )}
-                    {m.type.minDeep !== m.type.maxDeep && (
-                      <NumField label="Deep" value={m.config.deep ?? m.type.defaultDeep}
-                        onChange={m.setDeep} min={m.type.minDeep} max={m.type.maxDeep} narrow />
-                    )}
+                    {/* Lane and cart depth is the building's answer, not a
+                        question: an input let someone ask for a lane deeper
+                        than the floor can hold. It is derived and reported. */}
                   </div>
                 </>
               )}
@@ -297,6 +296,7 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                   palletWidthIn={m.pallet.widthIn} palletLoadHeightIn={m.pallet.loadHeightIn}
                   palletDepthIn={m.pallet.depthIn}
                   lane={m.type.onePalletLanes} deep={layout.deep} openEnds={m.type.openEnds}
+                  depthSection={m.type.depthSection}
                   box={elBox(building.lengthFt, building.widthFt)}
                   sub={m.type.onePalletLanes
                     ? `1 pallet / lane · ${layout.deep} deep`

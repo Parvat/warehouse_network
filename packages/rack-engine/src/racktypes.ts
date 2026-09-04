@@ -41,6 +41,15 @@ export interface RackType {
    * it is picked from an aisle like selective.
    */
   onePalletLanes?: true;
+  /**
+   * True where a section through the row is worth drawing: the frame depth, the
+   * pallets front to back, the overhang past the frame and the flue behind it.
+   *
+   * That is a row reached from an aisle. A lane system is defined by its depth
+   * rather than described by it — its elevation already shows the lane — so a
+   * second view of the same thing is a control that does nothing useful.
+   */
+  depthSection?: true;
   badge: string;
   blurb: string;
   bestFor: string;
@@ -51,6 +60,7 @@ export const RACK_TYPES: readonly RackType[] = [
   {
     kind: 'selective', name: 'Selective', defaultDeep: 1, minDeep: 1, maxDeep: 1,
     pick: 'aisle', openEnds: 0, rotation: 'Any', selectivity: '100%', standardBom: true,
+    depthSection: true,
     badge: 'Most versatile',
     blurb: 'Direct access to every pallet. Best for a wide variety of SKUs and operations.',
     bestFor: 'General warehousing, distribution, retail, 3PL, mixed inventory',
@@ -60,6 +70,7 @@ export const RACK_TYPES: readonly RackType[] = [
   {
     kind: 'doubledeep', name: 'Double-deep', defaultDeep: 2, minDeep: 2, maxDeep: 2,
     pick: 'aisle', openEnds: 0, rotation: 'Any', selectivity: '50%', standardBom: false,
+    depthSection: true,
     badge: 'Fewer aisles',
     blurb: 'Two pallets deep on each side. Half the aisles, so more floor goes to stock.',
     bestFor: 'Medium SKU counts where floor space is tight',

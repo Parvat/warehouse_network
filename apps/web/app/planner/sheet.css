@@ -455,6 +455,17 @@
 
 /* The other view of the bay. Labelled, not a bare chevron: a reader should
    know what is on the far side of it before they press it. */
+/* The head holds a caption, a summary and this control. An elevation's panel
+   is only as wide as the drawing is, and at that width the three did not fit:
+   flex took the difference out of whichever child it liked, so the control slid
+   37px and past the figure's edge as the caption changed with the view. The
+   text may wrap and give ground; the control may not, because a control that
+   moves when the caption does is a control the reader has to hunt for. */
+.a3 .fighead .t{flex:1 1 auto;min-width:0}
+.a3 .fighead .r{flex:0 1 auto;min-width:0}
+.a3 .figview{flex:0 0 auto}
+.a3 .figbox.el .fighead{gap:10px}
+
 .a3 .figview{margin-left:auto;padding:0 7px;height:17px;cursor:pointer;white-space:nowrap;
   border:1px solid var(--line);background:var(--paper);color:var(--blue);border-radius:2px;
   font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:.08em;text-transform:uppercase}

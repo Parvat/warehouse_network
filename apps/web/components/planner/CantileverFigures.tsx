@@ -369,25 +369,10 @@ function Elevation({
     ext.add(CL, spY - 7);
   }
 
-  {
-    // The base is a level, so the first spacing to dimension is base to L1.
-    // The label is centred on that gap rather than on the floor line, where its
-    // descenders were being cut by the slab.
-    // On the right, where the level markers are, and clear of the dimension
-    // line it annotates by more than the label is tall.
-    const p0 = baseTopY, p1 = p0 - L.armPitchIn * ppi, px2 = CX + Math.max(armPx, baseHalf) + 46;
-    ext.text({ x: px2 + 29, y: p0 - 3, size: fDim, anchor: 'start', rotate: -90,
-      text: `${L.armPitchIn}"` });
-    parts.push(
-      <line key={key++} x1={px2} y1={p1} x2={px2} y2={p0} stroke={BLUE} />,
-      <line key={key++} x1={px2 - 5} y1={p1} x2={px2 + 5} y2={p1} stroke={BLUE} />,
-      <line key={key++} x1={px2 - 5} y1={p0} x2={px2 + 5} y2={p0} stroke={BLUE} />,
-      <text key={key++}
-        transform={`translate(${(px2 + 29).toFixed(1)},${(p0 - 3).toFixed(1)}) rotate(-90)`}
-        textAnchor="start" fontFamily="JetBrains Mono" fontSize={fDim} fill={BLUE}>
-        {L.armPitchIn}&#34;</text>,
-    );
-  }
+  // The arm pitch used to be dimensioned out beyond the level markers, clear of
+  // the tower with no extension lines back to the arms it measured — a rule
+  // floating beside the labels rather than a dimension on anything. The figure
+  // is on the placard, where it reads as what it is.
 
   parts.push(
   );

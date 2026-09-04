@@ -63,7 +63,7 @@ export interface BuildingDraft {
 export interface PalletDraft { depthIn: number; widthIn: number; loadHeightIn: number; weightLb: number }
 export interface ConfigDraft {
   beamIn: number;
-  deep: number | undefined; orientation: Orientation;
+  orientation: Orientation;
   /** The truck sets the aisle; it does not lock it. */
   truck: TruckKind;
   /**
@@ -115,7 +115,7 @@ const DEFAULT_BUILDING: BuildingDraft = {
   columns: 'later', gridXFt: DEFAULT_GRID_FT, gridYFt: DEFAULT_GRID_FT,
 };
 const DEFAULT_CONFIG: ConfigDraft = {
-  beamIn: 96, deep: undefined,
+  beamIn: 96,
   orientation: 'length', truck: 'counterbalance',
   crossAisles: undefined, priority: 'cantilever',
 };
@@ -149,7 +149,6 @@ export interface PlannerModel {
     armSpacingIn: (v: number) => void;
   };
   setBeamIn: (v: number) => void;
-  setDeep: (v: number) => void;
   setTruck: (v: TruckKind) => void;
   setCrossAisles: (v: number | undefined) => void;
   setPriority: (v: MixedPriority) => void;
@@ -293,7 +292,6 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
     wallClearanceFt: WALL_CLEARANCE_FT,
     orientation: config.orientation,
     crossAisles: config.crossAisles,
-    deep: config.deep,
   }), [building.lengthFt, building.widthFt, config, solved.spec, aisleFt, available]);
 
   const layout = useMemo(() => layoutRack(kind, rackInput), [kind, rackInput]);
@@ -346,7 +344,6 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
       levels: solved.spec.levels,
       frameDepthIn: solved.spec.frameDepthIn,
       aisleWidthFt: aisleFt,
-      deep: config.deep,
     },
     priority: config.priority,
     crossAisles: config.crossAisles,
@@ -376,7 +373,6 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
 
   const selectKind = useCallback((k: RackKind) => {
     setKind(k);
-    setConfig((c) => ({ ...c, deep: undefined }));   // lane depth belongs to the type
   }, []);
 
   const onBuilding = useMemo<Record<'lengthFt' | 'widthFt' | 'clearHeightFt', (v: number) => void>>(() => ({
@@ -418,7 +414,6 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
 
   const setField = useMemo(() => ({
     beamIn: (v: number) => setConfig((c) => ({ ...c, beamIn: v })),
-    deep: (v: number) => setConfig((c) => ({ ...c, deep: v })),
     // The truck sets the aisle and then leaves it alone: a designer may still
     // trim a foot to clear a column, and the check flag catches a real mistake.
     truck: (v: TruckKind) => setConfig((c) => ({ ...c, truck: v })),
@@ -469,6 +464,9 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
       { k: 'Strip depth', v: `${mixed.stripTotalDepthFt.toFixed(1)} ft` },
       { k: 'Pallet zone', v: `${mixed.palletWidthFt.toFixed(1)} ft` },
       { k: 'Arm levels', v: `${mixed.strip.levels} + base` },
+      // The pitch is what the level count is derived from, so a reader who wants
+      // to check the one needs the other. It reads here in both families.
+      { k: 'Arm spacing', v: `${mixed.strip.armPitchIn} in` },
       { k: 'Beam', v: `${solved.spec.beamLengthIn} in` },
       { k: 'Base / arm', v: `${mixed.strip.armLengthIn} in` },
     ]
@@ -503,6 +501,11 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
       { k: 'Level pitch', v: `${solved.spec.levelPitchIn} in` },
       { k: 'Frame cap', v: `${solved.spec.frameCapacityLb.toLocaleString()} lb` },
       { k: 'Rotation', v: type.rotation },
+      // Derived, not asked: the building decides how deep a lane or a cart nest
+      // can go, and a customer cannot know that before the floor is laid out.
+      ...(layout.deep > 1
+        ? [{ k: type.pick === 'lane' ? 'Lane depth' : 'Deep', v: `${layout.deep} pallets` }]
+        : []),
       { k: 'Usable floor', v: `${Math.round(layout.usableAlongFt * layout.acrossFt).toLocaleString()} sq ft` },
       { k: 'Flue', v: `${layout.flueIn} in` },
       { k: 'Cross aisles', v: layout.crossAisles === 0 ? 'none'
@@ -540,7 +543,7 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
     family, setFamily,
     building, pallet, config, cant, sprinklers, kind, type,
     onBuilding, onPallet, onCant,
-    setBeamIn: setField.beamIn, setDeep: setField.deep,
+    setBeamIn: setField.beamIn,
     setTruck: setField.truck,
     setCrossAisles: setField.crossAisles, setPriority: setField.priority,
     setAvailable: onBuilding2.available, setAvailablePct: onBuilding2.availablePct,

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   AVAILABLE_THREE_QUARTERS, DOCK_APRON_FT, LANE_CLEARANCE_IN, laneWidthFt, COLUMN_PENALTY, CROSS_AISLE_WIDTH_FT, crossAislesFor,
-  TRUCK_AISLE_RANGE_FT, gridColumns, layoutRack, truckAisleCheck, truckAisleFt,
+  TRUCK_AISLE_RANGE_FT, gridColumns, layoutRack, rackType, truckAisleCheck, truckAisleFt,
   type ColumnWhere, type RackLayout, type RackLayoutInput, type TruckKind,
 } from '../src/index.js';
 
@@ -373,4 +373,55 @@ test('push-back keeps its beams, and everything else is untouched', () => {
     const longer = layoutRack(kind, { ...base, palletWidthIn: 40, beamLengthIn: 144 });
     assert.notEqual(longer.bays, l.bays, `${kind}: beam length does`);
   }
+});
+
+/* ── 6. the building decides how deep a lane goes ──────────────────────── */
+
+test('lane and cart depth comes from the floor, not from a question', () => {
+  // A lane six pallets deep in a building that can only take five is not a
+  // layout, it is a wish. So the depth is derived, and a wider building can
+  // afford a deeper one.
+  const narrow = layoutRack('drivein', { ...base, buildingWidthFt: 60, palletWidthIn: 40 });
+  const wide = layoutRack('drivein', { ...base, buildingWidthFt: 300, palletWidthIn: 40 });
+  const R = rackType('drivein');
+
+  for (const l of [narrow, wide]) {
+    assert.ok(l.deep >= R.minDeep && l.deep <= R.maxDeep,
+      `${l.deep} is within ${R.minDeep}-${R.maxDeep}`);
+  }
+  assert.notEqual(narrow.deep, wide.deep,
+    `a 60 ft building takes ${narrow.deep} deep, a 300 ft one ${wide.deep}`);
+
+  // and whatever it picked stores at least as much as any other depth would
+  for (let d = R.minDeep; d <= R.maxDeep; d++) {
+    const forced = layoutRack('drivein', { ...base, buildingWidthFt: 300, palletWidthIn: 40, deep: d });
+    assert.ok(wide.positions >= forced.positions,
+      `${d} deep gives ${forced.positions}, the derived ${wide.deep} gives ${wide.positions}`);
+  }
+});
+
+test('a fixed-depth type has nothing to derive', () => {
+  for (const kind of ['selective', 'doubledeep'] as const) {
+    const R = rackType(kind);
+    assert.equal(R.minDeep, R.maxDeep, `${kind} has one depth`);
+    assert.equal(layoutRack(kind, { ...base, palletWidthIn: 40 }).deep, R.minDeep);
+  }
+});
+
+test('push-back derives its cart nest the same way', () => {
+  const wide = layoutRack('pushback', { ...base, buildingWidthFt: 300 });
+  const R = rackType('pushback');
+
+  // Not monotonic in width, and it should not be: a nest is only worth its
+  // depth if the pairs and their aisles divide the floor well, so a wider
+  // building can settle on a shallower nest that packs better. What holds is
+  // that whatever it picked stores at least as much as any other depth.
+  for (let d = R.minDeep; d <= R.maxDeep; d++) {
+    const forced = layoutRack('pushback', { ...base, buildingWidthFt: 300, deep: d });
+    assert.ok(wide.positions >= forced.positions,
+      `${d} deep gives ${forced.positions}, the derived ${wide.deep} gives ${wide.positions}`);
+  }
+  assert.equal(wide.palletsAcross, 2, 'and its carts still carry two across');
+  assert.equal(layoutRack('drivein', { ...base, palletWidthIn: 40 }).palletsAcross, 1,
+    'where a drive-in lane carries one');
 });

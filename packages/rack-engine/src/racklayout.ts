@@ -88,6 +88,10 @@ export interface RackLayout {
   laneWidthFt?: number;
   /** Lanes across one block, for the types that have them. */
   lanesPerBlock?: number;
+  /** Pallet levels, including the floor. Carried so a figure can report it. */
+  levels: number;
+  /** Pallets across one lane or bay: one in a drive-in, two on a push-back cart. */
+  palletsAcross: number;
   alongFt: number;
   acrossFt: number;
   usedFt: number;
@@ -170,7 +174,6 @@ export interface RackLayout {
  */
 export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
   const R: RackType = rackType(kind);
-  const deep = Math.max(R.minDeep, Math.min(R.maxDeep, input.deep ?? R.defaultDeep));
 
   const alongFullFt =
     (input.orientation === 'length' ? input.buildingLengthFt : input.buildingWidthFt) -
@@ -199,6 +202,20 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
   const fd = input.frameDepthIn / 12;
   const flue = FLUE_IN / 12;
   const aisle = input.aisleWidthFt;
+
+  /*
+   * 1b ── how deep the lanes go, which is the building's answer rather than a
+   * question to ask.
+   *
+   * A lane six pallets deep in a building that can only take five is not a
+   * layout, it is a wish. So every depth in the type's range is costed against
+   * this floor — the blocks it leaves room for once the aisles are placed — and
+   * the one that stores most wins. Ties go to the shallower, because depth is
+   * bought with selectivity and there is no sense paying for it twice.
+   */
+  const deep = input.deep !== undefined
+    ? Math.max(R.minDeep, Math.min(R.maxDeep, input.deep))
+    : bestDeep();
 
   // 2 ── the offsets that lose fewest bays to the columns
   const grid = gridOf(input);
@@ -231,6 +248,8 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
     deep, bays: best.bays, rows: best.rows, blocks: best.blocks, wallRows: best.wallRows,
     positions, bayLengthFt,
     laneWidthFt: lanes ? bayLengthFt : undefined,
+    levels: input.levels,
+    palletsAcross: lanes ? 1 : input.palletsPerBay,
     lanesPerBlock: lanes ? best.bays : undefined,
     alongFt: alongFullFt, acrossFt, usedFt: best.usedFt,
     spareFt: acrossFt - best.usedFt - best.acrossOffsetFt,
@@ -252,7 +271,7 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
   /** One candidate placement, scored by the bays it ends up with. */
   function trial(alongOffsetFt: number, acrossOffsetFt: number) {
     const across = acrossFt - acrossOffsetFt;
-    const { rows, blocks, wallRows, usedFt, bands, flues } = stack(across, acrossOffsetFt);
+    const { rows, blocks, wallRows, usedFt, bands, flues } = stack(across, acrossOffsetFt, deep);
     // Bays are counted from what the segments actually hold: nothing straddles
     // a cross aisle, so a segment's remainder is spare floor rather than a bay.
     const { bayStartsFt, crossAisleAtFt, bays } =
@@ -273,8 +292,26 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
     };
   }
 
+  /**
+   * The depth this floor is worth having.
+   *
+   * Costed on rows alone: the bays along a row do not change with depth, so
+   * whichever depth stacks the most rows across the building stores the most.
+   */
+  function bestDeep(): number {
+    let pick = R.minDeep, most = -1;
+    for (let d = R.minDeep; d <= R.maxDeep; d++) {
+      const { rows } = stack(acrossFt, 0, d);
+      // an aisle-picked row is d pallets deep; a lane block is counted as d
+      // rows already, so rows is the comparable figure either way
+      const stored = R.pick === 'aisle' ? rows * d : rows;
+      if (stored > most) { most = stored; pick = d; }
+    }
+    return pick;
+  }
+
   /** The row bands across the building, in envelope feet from the wall line. */
-  function stack(across: number, acrossOffsetFt: number) {
+  function stack(across: number, acrossOffsetFt: number, deep: number) {
     const bands: { start: number; depth: number }[] = [];
     const flues: { start: number; depth: number }[] = [];
     let rows = 0, blocks = 0, wallRows = 0, usedFt = 0;

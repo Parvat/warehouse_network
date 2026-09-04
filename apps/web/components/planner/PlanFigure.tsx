@@ -446,7 +446,7 @@ function PlanFigureWithStats(p: PlanFigureProps) {
       <PlanFigure {...p} foot={
         <p className="figstats">
           {L.blocks} {L.blocks === 1 ? 'BLOCK' : 'BLOCKS'} · {L.bays} LANES
-          {' · '}{L.deep} DEEP · 1 PALLET WIDE
+          {' · '}{L.deep} DEEP · {L.levels} HIGH · {L.palletsAcross} WIDE
           {L.baysLostToColumns > 0 ? ` · ${L.baysLostToColumns} LOST TO COLUMNS` : ''}
           {' · '}{Math.max(0, L.spareFt).toFixed(0)}&#8242; SPARE
         </p>
@@ -457,8 +457,10 @@ function PlanFigureWithStats(p: PlanFigureProps) {
   return (
     <PlanFigure {...p} foot={
       <p className="figstats">
-        {L.rows} ROWS{R.pick === 'aisle' && L.deep > 1 ? ` × ${L.deep} DEEP` : ''}
-        {' · '}{L.bays} BAYS/ROW
+        {L.rows} ROWS{' · '}{L.bays} BAYS/ROW
+        {/* Depth, height and width are what tell one deep type from another, so
+            they are named together wherever a type has depth to speak of. */}
+        {L.deep > 1 ? ` · ${L.deep} DEEP · ${L.levels} HIGH · ${L.palletsAcross} WIDE` : ''}
         {L.baysLostToColumns > 0 ? ` · ${L.baysLostToColumns} LOST TO COLUMNS` : ''}
         {' · '}{Math.max(0, L.spareFt).toFixed(0)}&#8242; SPARE
       </p>
