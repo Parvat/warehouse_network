@@ -102,6 +102,18 @@ export function fitViewBox(
   pad = FIG_PAD,
   lockY?: { y0: number; y1: number },
   lockX?: { x0: number; x1: number },
+  /**
+   * Puts this x at the middle of the fitted box, by growing whichever side of
+   * it is the shorter. A drawing whose annotation hangs further off one side
+   * than the other is otherwise centred on its labels rather than on itself,
+   * which reads as the drawing having slid across its frame.
+   */
+  centreX?: number,
+  /**
+   * Puts this figure's floor at `fraction` of the box height, by growing the
+   * box on whichever side of it is short. See `floorFraction`.
+   */
+  floorAt?: { y: number; fraction: number },
 ): { viewBox: string; w: number; h: number; aspect: number } {
   const b = e.box() ?? { x: 0, y: 0, w: 100, h: 100 };
   // A locked range still has to contain what was drawn: a label that rises
@@ -113,14 +125,28 @@ export function fitViewBox(
   // that both need a little more room grow by the same step and keep the same
   // frame height — and two that need none stay exactly equal.
   const grow = (over: number) => Math.ceil(Math.max(0, over) / LOCK_STEP) * LOCK_STEP;
-  const y0 = lockY ? lockY.y0 - grow(lockY.y0 - (b.y - pad)) : b.y - pad;
-  const y1 = lockY ? lockY.y1 + grow(b.y + b.h + pad - lockY.y1) : b.y + b.h + pad;
+  let y0 = lockY ? lockY.y0 - grow(lockY.y0 - (b.y - pad)) : b.y - pad;
+  let y1 = lockY ? lockY.y1 + grow(b.y + b.h + pad - lockY.y1) : b.y + b.h + pad;
   // The same for the width, where a figure has two views to show: a box fitted
   // to whichever is on screen would resize and re-centre the drawing every time
   // the reader switched, which is a layout jumping about rather than a drawing
   // being looked at from a second angle.
-  const x0 = lockX ? lockX.x0 - grow(lockX.x0 - (b.x - pad)) : b.x - pad;
-  const x1 = lockX ? lockX.x1 + grow(b.x + b.w + pad - lockX.x1) : b.x + b.w + pad;
+  let x0 = lockX ? lockX.x0 - grow(lockX.x0 - (b.x - pad)) : b.x - pad;
+  let x1 = lockX ? lockX.x1 + grow(b.x + b.w + pad - lockX.x1) : b.x + b.w + pad;
+  if (centreX !== undefined) {
+    const reach = Math.max(centreX - x0, x1 - centreX);
+    x0 = centreX - reach; x1 = centreX + reach;
+  }
+  // The floor last, because it moves the vertical range and nothing else may
+  // move it afterwards. Only ever grows: the range already contains everything
+  // that was drawn, and cropping a drawing to line it up with another one is
+  // not lining them up.
+  if (floorAt && y1 > y0) {
+    const f = Math.min(0.999, Math.max(0.001, floorAt.fraction));
+    const at = (floorAt.y - y0) / (y1 - y0);
+    if (at > f) y1 = y0 + (floorAt.y - y0) / f;            // room under the floor
+    else if (at < f) y0 = (floorAt.y - f * y1) / (1 - f);  // room over it
+  }
   const h = Math.max(1, y1 - y0);
   const w = Math.max(1, x1 - x0);
   return {
@@ -234,6 +260,33 @@ export const elBox = (
  */
 export const FIG_TEXT = { anno: 10, tiny: 10, dim: 10 } as const;
 
+/**
+ * The ways a figure can be constrained beyond its own contents.
+ *
+ * An object rather than a tail of positional arguments: there are six of them,
+ * every figure uses two or three, and passing `undefined` four times to reach
+ * the one that matters is how a call site stops saying what it means.
+ */
+export interface FitOptions {
+  /** The size a callout should land at on screen, in CSS pixels. */
+  targetPx?: number;
+  /** Fixes the vertical range, for figures that have to stay comparable. */
+  lockY?: (font: number) => { y0: number; y1: number };
+  /** Fixes the horizontal range, for a figure with more than one view. */
+  lockX?: (font: number) => { x0: number; x1: number };
+  /**
+   * Draws the figure's other views into the same extent, for their bounds only.
+   * A figure that can be looked at two ways has to be boxed for both, or the
+   * box resizes when the reader switches — and the drawing slides across the
+   * page instead of turning on the spot.
+   */
+  measureAlso?: (font: number, ext: Extent, widthPx: number) => void;
+  /** Centres the fitted box on this x, as `fitViewBox` describes. */
+  centreX?: number;
+  /** Puts this figure's floor on the sheet's baseline. See `floorFraction`. */
+  floorAt?: (font: number) => { y: number; fraction: number };
+}
+
 export interface FittedFigure<T> {
   /** What the drawing emitted, at the settled font size. */
   drawn: T;
@@ -262,18 +315,9 @@ export function fitFigure<T>(
    * the zoom, so detail comes back as the customer magnifies.
    */
   draw: (font: number, ext: Extent, widthPx: number) => T,
-  targetPx = FIG_TEXT.anno,
-  /** Fixes the vertical range, for figures that have to stay comparable. */
-  lockY?: (font: number) => { y0: number; y1: number },
-  /** Fixes the horizontal range, for a figure with more than one view. */
-  lockX?: (font: number) => { x0: number; x1: number },
-  /**
-   * Draws the figure's other views into the same extent, for their bounds only.
-   * A figure that can be looked at two ways has to be boxed for both, or the
-   * box resizes when the reader switches — and the drawing slides across the
-   * page instead of turning on the spot.
-   */
-  measureAlso?: (font: number, ext: Extent, widthPx: number) => void,
+  {
+    targetPx = FIG_TEXT.anno, lockY, lockX, measureAlso, centreX, floorAt,
+  }: FitOptions = {},
 ): FittedFigure<T> {
   let font = 12, fitted = { viewBox: '0 0 100 100', w: 100, h: 100, aspect: 1 };
   let drawn = undefined as T;
@@ -283,7 +327,7 @@ export function fitFigure<T>(
     const ext = newExtent();
     drawn = draw(font, ext, widthPx);
     measureAlso?.(font, ext, widthPx);
-    fitted = fitViewBox(ext, FIG_PAD, lockY?.(font), lockX?.(font));
+    fitted = fitViewBox(ext, FIG_PAD, lockY?.(font), lockX?.(font), centreX, floorAt?.(font));
     // The shape decides the width, the width decides the units a pixel is
     // worth, and the units decide the labels — which move the shape. Three
     // passes settle it; the third moves the font by well under a per cent.
@@ -336,6 +380,29 @@ export function elevationFrameY(spY: number, font: number): { y0: number; y1: nu
   // FL+44, and the uniform pad under that. Set clear of the lot, so neither
   // elevation has to grow its frame and part company with the other on scale.
   return { y0: spY - Math.ceil(need / LOCK_STEP) * LOCK_STEP, y1: EL_FRAME.FL + 56 };
+}
+
+/**
+ * Where the floor stands in a figure's box, as a fraction of its height.
+ *
+ * Every drawing on the sheet is of one building, and they are read across it —
+ * so the floor has to be at one height on the page rather than at whatever
+ * height each drawing's own contents happen to put it. Fitted separately they
+ * come out ragged: the elevation reserves room under its floor for the width
+ * dimension and the label naming it, the plan reserves none under its back
+ * wall, and the two floors land a good thirty pixels apart.
+ *
+ * The elevation is the figure with the real constraint below the floor, so the
+ * fraction is taken from its frame and everything else is fitted to match. It
+ * is derived once, here, rather than each figure choosing its own origin.
+ *
+ * The sprinkler line is the datum the elevation's frame is built from, and it
+ * is always `topPad`: `elevationPpi` divides the room above the floor by the
+ * clear height, so the clear height always measures back to the same place.
+ */
+export function floorFraction(font: number): number {
+  const { y0, y1 } = elevationFrameY(EL_FRAME.topPad, font);
+  return (EL_FRAME.FL - y0) / (y1 - y0);
 }
 
 /** Pixels per inch, from the clear height alone, so both elevations agree. */

@@ -250,20 +250,17 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
             <div className="figs">
               {isMixed ? (
                 <MixedPlanFigure mixed={mixed} kind={m.kind} box={planBox(true)}
-                  head={<PlanHead lengthFt={building.lengthFt} widthFt={building.widthFt} />}
                   buildingLengthFt={building.lengthFt} buildingWidthFt={building.widthFt}
                   frameDepthIn={spec.frameDepthIn} flueIn={layout.flueIn}
                   aisleFt={m.aisleFt} wallClearanceFt={m.wallClearanceFt}
                   orientation={m.config.orientation} boxClass="pl" />
               ) : isLong ? (
                 <CantileverPlanFigure layout={runs} box={planBox()}
-                  head={<PlanHead lengthFt={building.lengthFt} widthFt={building.widthFt} />}
                   buildingLengthFt={building.lengthFt} buildingWidthFt={building.widthFt}
                   aisleFt={m.aisleFt} wallClearanceFt={m.wallClearanceFt}
                   orientation={m.config.orientation} boxClass="pl" />
               ) : (
                 <PlanFigure kind={m.kind} layout={layout} box={planBox()}
-                  head={<PlanHead lengthFt={building.lengthFt} widthFt={building.widthFt} />}
                   gridLabel={m.building.columns === 'grid'
                     ? `COLUMN GRID ${m.building.gridXFt}′ × ${m.building.gridYFt}′` : undefined}
                   buildingLengthFt={building.lengthFt} buildingWidthFt={building.widthFt}
@@ -401,16 +398,6 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
 }
 
 /* ── the schedule ──────────────────────────────────────────────────────── */
-
-/** Fig. 1's heading. It rides inside the box the drawing sizes. */
-function PlanHead({ lengthFt, widthFt }: { lengthFt: number; widthFt: number }) {
-  return (
-    <div className="fighead">
-      <span className="t">Fig. 1 — Building plan</span>
-      <span className="r mono">{lengthFt} × {widthFt} ft</span>
-    </div>
-  );
-}
 
 /** An elevation's heading. */
 function ElHead({ title = 'Fig. 2 — Elevation, one bay', sub }: {

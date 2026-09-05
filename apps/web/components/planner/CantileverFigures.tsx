@@ -3,9 +3,10 @@
 import { memo } from 'react';
 import { DOCK_APRON_FT, ftIn } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
-import { FigBoxEl } from './figBox';
+import { FigBoxEl, PlanHead, type LegendItem } from './figBox';
 import {
-  EL_FRAME, FIG_TEXT, elevationFrameY, elevationPpi, elBox, planBox, fitFigure, type Extent, type FigBox,
+  EL_FRAME, elevationFrameY, elevationPpi, elBox, floorFraction, planBox, fitFigure,
+  type Extent, type FigBox,
 } from './figText';
 import type { CantileverRunLayout, Orientation } from '@trace/rack-engine';
 
@@ -36,8 +37,6 @@ export interface CantileverPlanProps {
   orientation: Orientation;
   /** The container this fills, which is all the type sizing needs to know. */
   box?: FigBox;
-  /** The figure's heading, rendered inside the box it sizes. */
-  head?: React.ReactNode;
   /** Which of the row's boxes this is. */
   boxClass?: string;
 }
@@ -88,10 +87,19 @@ function Plan(p: CantileverPlanProps) {
 
   L.rowSides.forEach((sides, r) => {
     const depthFt = sides === 2 ? L.doubleDepthFt : L.singleDepthFt;
-    // A wall row is reached only from the aisle, so its arms face inward: the
-    // column line sits on the wall side for the first row and on the far side
-    // for the last, with the arms between.
-    const atFarWall = sides === 1 && r === L.rows - 1;
+    /*
+     * A wall row is reached only from the aisle, so its arms face inward: the
+     * column line sits on the wall side and the arms reach away from it.
+     *
+     * Which wall depends on where in the building the row is. The solver lays
+     * a single row against the near wall first — it braces back to it — and
+     * only ever puts a second single at the far wall, as a last resort. So a
+     * row is at the far wall when it is the last of several, never when it is
+     * the only one: `r === rows - 1` alone is also true of a lone row, which
+     * turned the one case the building most often has — a single wall row —
+     * around to face the wall it is standing against.
+     */
+    const atFarWall = sides === 1 && r > 0 && r === L.rows - 1;
     const colC = sides === 2 ? c + depthFt / 2 : atFarWall ? c + depthFt : c;
     const armC0 = sides === 2 ? colC - armFt : atFarWall ? colC - armFt : colC;
     const armC1 = sides === 2 ? colC + armFt : atFarWall ? colC : colC + armFt;
@@ -140,18 +148,6 @@ function Plan(p: CantileverPlanProps) {
     }
   });
 
-  /* What the customer is storing, under the legend in both orientations.
-     Set beside the first run it read well until a row stopped short of the
-     building and a cross aisle opened up under it — then the line ran straight
-     through the aisle it was not describing. Out here it belongs to the whole
-     drawing, which is what it is about, and it cannot collide with anything.
-
-     The span and the run gap used to follow it. They are the solver's working,
-     not something a customer can act on. */
-  const annotation =
-    `${L.productLengthFt}′ PRODUCT · ${L.towersPerRun} TOWERS AT ${ftIn(L.towerCentresFt)}`
-    + ` · ${L.overhangFt}′ OVER EACH END`;
-
 
   /* the floor the customer said is not available, and the circulation that
      comes off the run — both are already out of the count, so they are drawn */
@@ -198,30 +194,45 @@ function Plan(p: CantileverPlanProps) {
       width={4.4} height={4.4} fill={BLUE} stroke="#fff" strokeWidth={0.5} />);
   }
 
-  const legY = PY + H + 16;
-
-  ext.add(PX, legY - 7, 9, 5);
-  ext.text({ x: PX + 13, y: legY - 2, size: fAnno, text: 'MATERIAL' });
-  ext.text({ x: PX + 79, y: legY - 2, size: fAnno, text: 'TOWER' });
-  ext.text({ x: PX, y: legY + 10, size: fAnno, text: annotation });
 
     return (
       <>
         <BuildingShell px={PX} py={PY} w={W} h={H} apron={apron} font={fAnno}
           lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} vertical={vertical} />
         {parts}
-        <rect x={PX} y={legY - 7} width={9} height={5} fill={KRAFT} stroke={KRAFT_EDGE} strokeWidth={0.8} />
-        <text x={PX + 13} y={legY - 2} fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}>MATERIAL</text>
-        <rect x={PX + 72} y={legY - 7} width={3} height={5} fill={G} />
-        <text x={PX + 79} y={legY - 2} fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}>TOWER</text>
-        <text x={PX} y={legY + 10} fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}>
-          {annotation}</text>
       </>
     );
+  }, {
+    // The back wall of the building is this drawing's floor, and it is the
+    // line the elevations beside it stand their own floors on.
+    floorAt: (font) => ({ y: PY + H, fraction: floorFraction(font) }),
   });
 
+  /* What the customer is storing, said once under the drawing.
+
+     It used to be a mark inside the SVG, bottom left, on a line of its own
+     above the counts — two lines saying one thing about one drawing, set to
+     two different measures and two different alignments. It is the same kind
+     of statement as the counts, so it is said on the same line as them.
+
+     The span and the run gap used to follow it. They are the solver working,
+     not anything a customer can act on. */
+  const annotation =
+    `${L.productLengthFt}′ PRODUCT · ${L.towersPerRun} TOWERS AT ${ftIn(L.towerCentresFt)}`
+    + ` · ${L.overhangFt}′ OVER EACH END`;
+
+  // A tower and the material lying on its arms: the two marks this plan is
+  // made of, and the two a reader has to tell apart.
+  const legend: LegendItem[] = [
+    {
+      label: 'MATERIAL',
+      swatch: <rect x={0.4} y={0.6} width={9.2} height={4.8} fill={KRAFT} stroke={KRAFT_EDGE} strokeWidth={0.8} />,
+    },
+    { label: 'TOWER', swatch: <rect x={3.6} y={0.6} width={2.8} height={4.8} fill={G} /> },
+  ];
+
   return (
-    <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={p.head}>
+    <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={<PlanHead lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} legend={legend} />}>
       <svg id="plan" viewBox={fit.viewBox}
         style={{ aspectRatio: String(fit.aspect) }}
         preserveAspectRatio="xMidYMid meet" role="img"
@@ -232,6 +243,7 @@ function Plan(p: CantileverPlanProps) {
         {fit.drawn}
       </svg>
       <p className="figstats">
+        {annotation}{' · '}
         {L.rows} {L.rows === 1 ? 'ROW' : 'ROWS'} · {L.runsPerRow} RUNS/ROW
         {' · '}{L.towersPerRun} TOWERS/RUN
         {L.lastRowPartial ? ` · LAST ROW ${L.runsInLastRow} OF ${L.runsPerRow}` : ''}
@@ -369,16 +381,48 @@ function Elevation({
     ext.add(CL, spY - 7);
   }
 
-  // The arm pitch used to be dimensioned out beyond the level markers, clear of
-  // the tower with no extension lines back to the arms it measured — a rule
-  // floating beside the labels rather than a dimension on anything. The figure
-  // is on the placard, where it reads as what it is.
-
-  parts.push(
-  );
+  /*
+   * The arm pitch, dimensioned beside the level markers.
+   *
+   * What was removed from here before was a bare rule standing clear of the
+   * tower with nothing tying it to the arms it claimed to measure. This is the
+   * dimension proper — extension lines back to the two arms, a tick at each end
+   * and the figure between them — drawn in the tower dimension's own style, on
+   * the other side of the drawing.
+   *
+   * Base to the first arm: the lowest module, the same place the pallet bay
+   * beside it carries its own. Every module above is the same height, so the
+   * figure belongs where the reader starts rather than part way up the tower.
+   */
+  const armY = (i: number) => baseTopY - (i + 1) * L.armPitchIn * ppi;
+  if (L.levels >= 1 && armY(0) >= topY - 0.5) {
+    const yLow = baseTopY, yHigh = armY(0);
+    // Clear of the level markers, which stand between the arms and this. The
+    // widest of them is BASE, at four characters — sized for two, the dimension
+    // line landed on it.
+    const right = CX + Math.max(armPx, baseHalf);
+    const px = right + 8 + 4 * 0.6 * fTiny + 13;
+    // Clear of its own dimension line: a turned label rises from its baseline
+    // back towards the line, so the offset carries the cap height with it.
+    const tx = px + 9 + fDim * 0.78;
+    for (const y of [yLow, yHigh]) {
+      parts.push(<line key={key++} x1={right + 2} y1={y} x2={px + 5} y2={y}
+        stroke={LINE} strokeWidth={0.8} />);
+    }
+    parts.push(
+      <line key={key++} x1={px} y1={yHigh} x2={px} y2={yLow} stroke={BLUE} strokeWidth={1} />,
+      <line key={key++} x1={px - 5} y1={yHigh} x2={px + 5} y2={yHigh} stroke={BLUE} />,
+      <line key={key++} x1={px - 5} y1={yLow} x2={px + 5} y2={yLow} stroke={BLUE} />,
+      <text key={key++} transform={`translate(${tx.toFixed(1)},${((yLow + yHigh) / 2).toFixed(1)}) rotate(-90)`}
+        textAnchor="middle" fontFamily="JetBrains Mono" fontSize={fDim} fill={BLUE}>
+        {L.armPitchIn}&#34;</text>,
+    );
+    ext.text({ x: tx, y: (yLow + yHigh) / 2, size: fDim, anchor: 'middle', rotate: -90,
+      text: `${L.armPitchIn}"` });
+  }
 
     return <>{parts}</>;
-  }, FIG_TEXT.anno, (font) => elevationFrameY(spY, font));
+  }, { lockY: (font) => elevationFrameY(spY, font) });
 
   return (
     <FigBoxEl aspect={fit.aspect} className={boxClass} head={head}>

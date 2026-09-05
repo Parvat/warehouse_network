@@ -6,7 +6,7 @@ import {
   EL_FRAME, FIG_PAD, FIG_TEXT, elevationFrameY, elevationPpi, elBox, fitFigure, type Extent, type FigBox,
 } from './figText';
 import {
-  FLUE_IN, LANE_CLEARANCE_IN, laneFrameHeightIn, type RackSpec,
+  LANE_CLEARANCE_IN, laneFrameHeightIn, type RackSpec,
 } from '@trace/rack-engine';
 
 /**
@@ -75,7 +75,13 @@ function ElevationFigure({
 }: ElevationFigureProps) {
   // Which way the bay is being looked at. Presentation state: it belongs to the
   // component, not to the layout and not to the database.
-  const [view, setView] = useState<ElevationView>('front');
+  const [viewState, setView] = useState<ElevationView>('front');
+  // A type with no section has no control to leave one with, so the mode must
+  // not outlive the type that had it: switching from selective in its depth
+  // view to drive-in used to leave the drawing stuck in a section with no way
+  // back. Hiding the toggle is not enough — the mode itself has to reset.
+  if (!depthSection && viewState !== 'front') setView('front');
+  const view: ElevationView = depthSection ? viewState : 'front';
   const { FL, CX } = EL_FRAME;
   const colIn = 3;
   const beam = spec.beamLengthIn, ppb = spec.palletsPerBay;
@@ -136,7 +142,13 @@ function ElevationFigure({
   // bay is being looked at. So they hang off the widest view's edge, which is
   // the same in both, rather than off this view's — which moved them across the
   // figure every time the reader switched.
-  const widestSpanPx = Math.max(lane ? laneIn : beam, depthAcrossIn) * ppi;
+  // Only where there is a second view to make room for. A drive-in lane is
+  // eight pallets long in section and one pallet wide in front, so measuring a
+  // section that cannot be reached pushed these labels a lane's length clear of
+  // a drawing that was never going to be that wide — which is the dead space
+  // the front elevation sat to the right of.
+  const widestSpanPx = Math.max(lane ? laneIn : beam,
+    depthSection ? depthAcrossIn : 0) * ppi;
   const CL = CX - widestSpanPx / 2 - colPx - 26 - fAnno * 1.1;
 
   // The assertion, before anything is drawn. A beam whose face runs past the
@@ -216,9 +228,7 @@ function ElevationFigure({
     // A lane's levels are its rails, and the floor is not one of them — so it
     // is named for what it is, the way a cantilever's base is.
     const label = lane ? (i === 0 ? 'FLOOR' : `L${i}`) : `L${i + 1}`;
-    // Clear of the next row's upright, which stands beyond the flue in a
-    // section through the row and would otherwise be written over.
-    const lx = X1 + colPx + 8 + (v === 'depth' && !lane ? FLUE_IN * ppi + colPx : 0);
+    const lx = X1 + colPx + 8;
     ext.text({ x: lx, y: baseY - ph / 2 + 3, size: fTiny, text: label });
     levels.push(<text key={key++} x={lx} y={baseY - ph / 2 + 3}
       fontFamily="JetBrains Mono" fontSize={fTiny} fill={MUT}>{label}</text>);
@@ -298,28 +308,20 @@ function ElevationFigure({
 
   if (v === 'depth' && !lane) {
     // Looking along the row. The frame is narrower than the pallet it carries,
-    // which is the whole point of the view: a 42 in frame under a 48 in pallet,
-    // and a 9 in flue to the row behind it.
+    // which is the whole point of the view: a 42 in frame under a 48 in pallet.
+    //
+    // The row behind used to be drawn here too — an upright a flue away, with
+    // the flue dimensioned between them. It is the flue's own section that
+    // shows it, and this view is about one frame under one pallet: a second
+    // row's upright standing in it was answering a question the figure was not
+    // asking. The flue is on the placard and on the plan, where the gap it
+    // leaves between two rows can be seen as a gap.
     const overPx = (palletDepthIn - spec.frameDepthIn) * ppi / 2;
-    const flue = FLUE_IN * ppi;
     // Above everything, including the load standing proud of the frame.
     const topLoadY = Math.min(topY,
       FL - ((spec.levels - 1) * spec.levelPitchIn + palletLoadHeightIn) * ppi);
-    // The two uprights of the frame are drawn above, at the frame depth; what
-    // is left to show here is the row behind the flue, which is what the flue
-    // is a gap to.
-    const nx = X1 + flue;
-    frames.push(<rect key={key++} x={nx} y={topY} width={colPx} height={FL - topY} fill={PINE} />);
-    ext.add(nx + colPx, topY);
 
-    // the flue, dimensioned where it is
-    dims.push(<line key={key++} x1={X1} y1={FL + 12} x2={nx} y2={FL + 12} stroke={BLUE} />);
-    ext.text({ x: (X1 + nx) / 2, y: FL + 24, size: fDim, text: `FLUE ${FLUE_IN}"`,
-      anchor: 'middle' });
-    dims.push(<text key={key++} x={(X1 + nx) / 2} y={FL + 24} textAnchor="middle"
-      fontFamily="JetBrains Mono" fontSize={fDim} fill={BLUE}>FLUE {FLUE_IN}&#34;</text>);
-
-    // and the overhang, which is why the frame is the smaller figure
+    // the overhang, which is why the frame is the smaller figure
     ext.text({ x: CX, y: topLoadY - 8, size: fTiny, anchor: 'middle',
       text: `FRAME ${spec.frameDepthIn}" · ${(overPx / ppi).toFixed(0)}" OVER EACH SIDE` });
     dims.push(<text key={key++} x={CX} y={topLoadY - 8} textAnchor="middle"
@@ -369,10 +371,49 @@ function ElevationFigure({
     textAnchor="middle" fontFamily="JetBrains Mono" fontSize={fDim} fill={BLUE}>
     FRAME {(frameIn / 12).toFixed(0)}&#39;-0&#34;</text>);
 
-  // The level pitch used to be dimensioned out here, fifty units clear of the
-  // frame with no extension lines back to the levels it measured — a rule
-  // floating beside the level markers rather than a dimension on anything. The
-  // figure is on the placard, where it reads as what it is.
+  /*
+   * The module the elevation repeats on, dimensioned beside the level markers.
+   *
+   * What was removed from here before was a bare rule floating clear of the
+   * frame with nothing tying it to the levels it claimed to measure. This is
+   * the dimension proper — extension lines back to the two levels, a tick at
+   * each end and the figure between them — drawn in the frame dimension's own
+   * style, on the other side of the drawing.
+   *
+   * On the first level, off the floor. Every module up the frame is the same
+   * height, so the dimension says the same thing wherever it is put — and the
+   * place to put a figure that reads the same everywhere is where the reader
+   * starts, at the bottom, beside L1. Part way up a stack of identical modules
+   * it invites the question of what is different about that one.
+   */
+  if (spec.levels >= 2) {
+    const yLow = FL;
+    const yHigh = FL - spec.levelPitchIn * ppi;
+    // Clear of the level markers, which stand between the rack and this.
+    const labelW = (lane ? 5 : 3) * 0.6 * fTiny;
+    const px = X1 + colPx + 8 + labelW + 13;
+    // Under the markers rather than through them: the extension lines run back
+    // to the levels from the drawing's edge, and the labels sit on top.
+    for (const y of [yLow, yHigh]) {
+      shell.push(<line key={key++} x1={X1 + colPx + 2} y1={y} x2={px + 5} y2={y}
+        stroke={LINE} strokeWidth={0.8} />);
+    }
+    dims.push(<line key={key++} x1={px} y1={yHigh} x2={px} y2={yLow} stroke={BLUE} strokeWidth={1} />);
+    dims.push(<line key={key++} x1={px - 5} y1={yHigh} x2={px + 5} y2={yHigh} stroke={BLUE} />);
+    dims.push(<line key={key++} x1={px - 5} y1={yLow} x2={px + 5} y2={yLow} stroke={BLUE} />);
+    const pitchText = `${spec.levelPitchIn}"`;
+    // Clear of its own dimension line. The frame's figure sits nine units off
+    // to the left of its line, where the glyphs then grow away from it; the
+    // same nine units on the right grows them back over it, because a turned
+    // label rises from its baseline towards the line rather than away. So the
+    // offset here is the cap height again, and the gap matches by eye.
+    const tx = px + 9 + fDim * 0.78;
+    ext.text({ x: tx, y: (yLow + yHigh) / 2, size: fDim, anchor: 'middle', rotate: -90,
+      text: pitchText });
+    dims.push(<text key={key++} transform={`translate(${tx.toFixed(1)},${((yLow + yHigh) / 2).toFixed(1)}) rotate(-90)`}
+      textAnchor="middle" fontFamily="JetBrains Mono" fontSize={fDim} fill={BLUE}>
+      {pitchText}</text>);
+  }
 
   ext.add(X0, FL + 35);
   dims.push(<line key={key++} x1={X0} y1={FL + 30} x2={X1} y2={FL + 30} stroke={BLUE} />);
@@ -415,14 +456,17 @@ function ElevationFigure({
   const fit = fitFigure(
     box ?? elBox(2, 1),
     (fAnno, ext) => render(view, fAnno, ext),
-    FIG_TEXT.anno,
-    (font) => elevationFrameY(spY, font),
-    undefined,
-    // The other view, for its bounds only — what it draws is thrown away. Where
-    // there is only one view there is nothing else to make room for.
-    depthSection
-      ? (font, ext) => { render(view === 'front' ? 'depth' : 'front', font, ext); }
-      : undefined,
+    {
+      lockY: (font) => elevationFrameY(spY, font),
+      // The other view, for its bounds only — what it draws is thrown away.
+      // Where there is only one view there is nothing else to make room for.
+      measureAlso: depthSection
+        ? (font, ext) => { render(view === 'front' ? 'depth' : 'front', font, ext); }
+        : undefined,
+      // One view has nothing to stay in step with, so it is centred on the bay
+      // rather than on the labels hanging off either side of it.
+      centreX: depthSection ? undefined : CX,
+    },
   );
 
   // The caption is the view's, and the way to the other view sits with it. Not
@@ -456,7 +500,7 @@ function ElevationFigure({
           ? (lane
             ? `A lane seen along its length: ${deep} pallets deep on rails`
             : `A row seen end on: a ${spec.frameDepthIn} inch frame under a `
-              + `${palletDepthIn} inch pallet, with a ${FLUE_IN} inch flue behind it`)
+              + `${palletDepthIn} inch pallet`)
           : lane
             ? `One lane: ${spec.levels} levels of one pallet on rails, ${laneIn} inches wide`
             : `One rack bay: ${spec.levels} levels on a ${(spec.frameHeightIn / 12).toFixed(0)} foot frame`}>
