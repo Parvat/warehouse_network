@@ -188,8 +188,16 @@ function MixedPlan(p: MixedPlanProps) {
   // Along the rows the dimension sits near the far end; across them it runs up
   // the drawing from the bottom, so it cannot collide with the zone labels at
   // the top.
-  const dimA = (vertical ? p.buildingWidthFt : p.buildingLengthFt)
-    - p.wallClearanceFt - (vertical ? 4 : 14);
+  // And clear of the floor the customer said is not available for rack: that
+  // strip is hatched over the far end of the run and drawn after this, so a
+  // dimension set from the building's end disappeared under it as soon as the
+  // availability came off 100%. It is set from the end of the usable floor,
+  // which is the same end whenever the whole footprint is available.
+  const inset = vertical ? 4 : 14;
+  const dimA = Math.min(
+    (vertical ? p.buildingWidthFt : p.buildingLengthFt) - p.wallClearanceFt,
+    alongStartFt + S.usableAlongFt,
+  ) - inset;
   const dim = seg(dimA, 0, shC, M.sharedAisleFt);
   const tick0 = seg(dimA - 3, 6, shC, 0);
   const tick1 = seg(dimA - 3, 6, shC + M.sharedAisleFt, 0);
