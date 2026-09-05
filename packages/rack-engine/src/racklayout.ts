@@ -30,6 +30,23 @@ export interface RackColumn {
   bay?: number;
 }
 
+/**
+ * Which end of a lane block is open — the face a truck drives in at and
+ * retrieves from. A drive-in block has exactly one; the other end is closed.
+ *
+ * Named in the building's terms rather than the block's, so that the solver,
+ * the plan and a dealer's override all mean the same end by the same word:
+ * `front` is the end at the low side of the across axis — the side the rows are
+ * measured out from — and `back` is the end at the high side.
+ *
+ * It is a property of the block, not a thing to be worked out from what happens
+ * to sit next to it. A reader of this field must never re-derive it from wall
+ * adjacency: the solver's default does account for the wall, but a dealer can
+ * flip it, and a drawing that infers the end instead of reading it would then
+ * disagree with the layout it is drawing.
+ */
+export type AccessEnd = 'front' | 'back';
+
 export interface RackLayoutInput {
   buildingLengthFt: number;
   buildingWidthFt: number;
@@ -68,6 +85,13 @@ export interface RackLayoutInput {
   gridYFt?: number;
   /** Overrides the cross aisles Trace works out from the run length. */
   crossAisles?: number;
+  /**
+   * Overrides the open end the solver picks for every lane block. A dealer who
+   * knows the floor may want the lanes worked from the other side; nothing here
+   * stops that, including putting the open end at a wall, because an override
+   * is a decision rather than a suggestion.
+   */
+  accessEnd?: AccessEnd;
 }
 
 export interface RackLayout {
@@ -88,6 +112,15 @@ export interface RackLayout {
   laneWidthFt?: number;
   /** Lanes across one block, for the types that have them. */
   lanesPerBlock?: number;
+  /**
+   * The open end of each lane block, in order across the building.
+   *
+   * Empty unless the type is open at exactly one end. Drive-through carries
+   * none because both of its ends are open, and an aisle-picked type has no
+   * lanes to open. A block is never open at both ends: a rack meant to be
+   * entered from either side is drive-through, not drive-in.
+   */
+  blockAccess: readonly AccessEnd[];
   /** Pallet levels, including the floor. Carried so a figure can report it. */
   levels: number;
   /** Pallets across one lane or bay: one in a drive-in, two on a push-back cart. */
@@ -244,8 +277,23 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
   const perBay = lanes ? 1 : input.palletsPerBay * (R.pick === 'aisle' ? deep : 1);
   const positions = Math.round(best.netBays * input.levels * perBay);
 
+  /*
+   * Where each block is entered.
+   *
+   * Drive-in puts an aisle between blocks and none at either end, so the first
+   * block backs onto the wall it starts from and is worked from its far end;
+   * every other block has an aisle at its near end and is worked from there.
+   * A lone block has no aisle at all — the floor beyond it is what it is worked
+   * from, and that is its far end too.
+   */
+  const blockAccess: AccessEnd[] = R.openEnds === 1
+    ? Array.from({ length: best.blocks },
+      (_, i) => input.accessEnd ?? (i === 0 ? 'back' : 'front'))
+    : [];
+
   return {
     deep, bays: best.bays, rows: best.rows, blocks: best.blocks, wallRows: best.wallRows,
+    blockAccess,
     positions, bayLengthFt,
     laneWidthFt: lanes ? bayLengthFt : undefined,
     levels: input.levels,
