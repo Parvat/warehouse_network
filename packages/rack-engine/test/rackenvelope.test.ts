@@ -425,3 +425,42 @@ test('push-back derives its cart nest the same way', () => {
   assert.equal(layoutRack('drivein', { ...base, palletWidthIn: 40 }).palletsAcross, 1,
     'where a drive-in lane carries one');
 });
+
+/* ── which end of a lane is open ──────────────────────────────────────── */
+
+test('a drive-in block is open at exactly one end, and never at the wall', () => {
+  const l = layoutRack('drivein', { ...base, buildingWidthFt: 300, palletWidthIn: 40 });
+  assert.ok(l.blocks > 1, 'this building should take several blocks');
+  assert.equal(l.blockAccess.length, l.blocks, 'every block says where it is worked from');
+  // Drive-in puts its aisles between the blocks and none at either end, so the
+  // first block backs onto the wall it starts from: it can only be worked from
+  // its far end. Every other block has an aisle at its near end.
+  assert.equal(l.blockAccess[0], 'back', 'the first block backs onto the wall');
+  for (const end of l.blockAccess.slice(1)) {
+    assert.equal(end, 'front', 'a block with an aisle at its near end is worked from there');
+  }
+});
+
+test('a lone drive-in block is worked from the floor it leaves, not from the wall', () => {
+  const l = layoutRack('drivein', { ...base, buildingWidthFt: 34, palletWidthIn: 40 });
+  assert.equal(l.blocks, 1, 'this building takes one block');
+  assert.equal(l.blockAccess[0], 'back', 'the near end is the wall, so the far end is the open one');
+});
+
+test('drive-through carries no access end, because both of its ends are open', () => {
+  const l = layoutRack('drivethru', { ...base, buildingWidthFt: 300, palletWidthIn: 40 });
+  assert.ok(l.blocks > 0, 'this building should take blocks');
+  assert.deepEqual([...l.blockAccess], [], 'a type open at both ends names neither');
+});
+
+test('an aisle-picked type has no lanes to open', () => {
+  assert.deepEqual([...layoutRack('selective', base).blockAccess], []);
+});
+
+test('a dealer can flip the open end, wall or no wall', () => {
+  const l = layoutRack('drivein',
+    { ...base, buildingWidthFt: 300, palletWidthIn: 40, accessEnd: 'front' });
+  assert.ok(l.blocks > 1);
+  assert.ok(l.blockAccess.every((e) => e === 'front'),
+    'an override is a decision, and it applies to every block');
+});

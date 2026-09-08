@@ -464,6 +464,32 @@
 .a3 .fighead .t{flex:1 1 auto;min-width:0}
 .a3 .fighead .r{flex:0 1 auto;min-width:0}
 .a3 .figview{flex:0 0 auto}
+
+/* Fig. 1's key, in the slot the building's size used to have. It was drawn
+   inside the SVG, below the building — where it was measured into the viewBox
+   like any other mark and so took scale away from the drawing it explained.
+   Here it costs the drawing nothing and is read before it rather than after. */
+.a3 .figlegend{display:inline-flex;align-items:center;gap:11px;flex-wrap:nowrap;
+  overflow:hidden}
+.a3 .legitem{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+/* Sized in place, against `.figbox svg` above: that rule is meant for the
+   drawing, which fills its box, and it caught these swatches too — a 10 x 6
+   key mark stretched to the full width of the figure and shouldered the labels
+   out of the heading. */
+.a3 .legitem svg{flex:0 0 auto;width:10px;height:6px;margin-top:0;overflow:visible}
+
+/* The building's size, centred on the heading over the plan of it.
+
+   The heading already had the room: a title at one end, the key at the other
+   and the whole middle empty. A line of its own would have been chrome above
+   one drawing in a row and not the others — and since the box below is sized
+   by the drawing's shape, that difference lands as a difference in where the
+   drawings sit, which is the very thing the heading's fixed height prevents.
+   Out of the flow and centred on the box, it costs no height at all. */
+.a3 .fighead{position:relative}
+.a3 .figsize{position:absolute;left:0;right:0;top:0;margin:0;text-align:center;
+  font-family:'JetBrains Mono';font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--steel);pointer-events:none}
 .a3 .figbox.el .fighead{gap:10px}
 
 .a3 .figview{margin-left:auto;padding:0 7px;height:17px;cursor:pointer;white-space:nowrap;

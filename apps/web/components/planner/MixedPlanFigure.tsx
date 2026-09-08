@@ -5,8 +5,8 @@ import {
   DOCK_APRON_FT, rackType, type MixedLayout, type Orientation, type RackKind,
 } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
-import { FigBoxEl } from './figBox';
-import { planBox, fitFigure, type Extent, type FigBox } from './figText';
+import { FigBoxEl, PlanHead, type LegendItem } from './figBox';
+import { floorFraction, planBox, fitFigure, type Extent, type FigBox } from './figText';
 
 /**
  * Fig. 1 for a mixed floor: a cantilever strip against one wall and pallet
@@ -27,8 +27,6 @@ const G = '#14392B', ARM = '#1D5340', FILL = '#E8EFEA',
       KRAFT = '#E8DCC2', KRAFT_EDGE = '#B08F52';
 
 export interface MixedPlanProps {
-  /** The figure's heading, rendered inside the box it sizes. */
-  head?: React.ReactNode;
   /** Which of the row's boxes this is. */
   boxClass?: string;
   mixed: MixedLayout;
@@ -190,8 +188,16 @@ function MixedPlan(p: MixedPlanProps) {
   // Along the rows the dimension sits near the far end; across them it runs up
   // the drawing from the bottom, so it cannot collide with the zone labels at
   // the top.
-  const dimA = (vertical ? p.buildingWidthFt : p.buildingLengthFt)
-    - p.wallClearanceFt - (vertical ? 4 : 14);
+  // And clear of the floor the customer said is not available for rack: that
+  // strip is hatched over the far end of the run and drawn after this, so a
+  // dimension set from the building's end disappeared under it as soon as the
+  // availability came off 100%. It is set from the end of the usable floor,
+  // which is the same end whenever the whole footprint is available.
+  const inset = vertical ? 4 : 14;
+  const dimA = Math.min(
+    (vertical ? p.buildingWidthFt : p.buildingLengthFt) - p.wallClearanceFt,
+    alongStartFt + S.usableAlongFt,
+  ) - inset;
   const dim = seg(dimA, 0, shC, M.sharedAisleFt);
   const tick0 = seg(dimA - 3, 6, shC, 0);
   const tick1 = seg(dimA - 3, 6, shC + M.sharedAisleFt, 0);
@@ -335,27 +341,34 @@ function MixedPlan(p: MixedPlanProps) {
       width={4.4} height={4.4} fill={BLUE} stroke="#fff" strokeWidth={0.5} />);
   }
 
-  const legY = PY + H + 16;
-  ext.add(PX, legY - 7, 9, 5);
-  ext.text({ x: PX + 13, y: legY - 2, size: fAnno, text: 'MATERIAL' });
-  ext.text({ x: PX + 85, y: legY - 2, size: fAnno, text: 'RACK' });
-
     return (
       <>
         <BuildingShell px={PX} py={PY} w={W} h={H} apron={apron} font={fAnno}
           lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} vertical={vertical} />
         {parts}
-
-        <rect x={PX} y={legY - 7} width={9} height={5} fill={KRAFT} stroke={KRAFT_EDGE} strokeWidth={0.8} />
-        <text x={PX + 13} y={legY - 2} fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}>MATERIAL</text>
-        <rect x={PX + 72} y={legY - 7} width={9} height={5} fill={FILL} stroke={G} strokeWidth={0.8} />
-        <text x={PX + 85} y={legY - 2} fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}>RACK</text>
       </>
     );
+  }, {
+    // The back wall of the building is this drawing's floor, and it is the
+    // line the elevations beside it stand their own floors on.
+    floorAt: (font) => ({ y: PY + H, fraction: floorFraction(font) }),
   });
 
+  // Both families are on this floor, so the key names both: long product on
+  // cantilever arms, and pallets in racking.
+  const legend: LegendItem[] = [
+    {
+      label: 'MATERIAL',
+      swatch: <rect x={0.4} y={0.6} width={9.2} height={4.8} fill={KRAFT} stroke={KRAFT_EDGE} strokeWidth={0.8} />,
+    },
+    {
+      label: 'RACK',
+      swatch: <rect x={0.4} y={0.6} width={9.2} height={4.8} fill={FILL} stroke={G} strokeWidth={0.8} />,
+    },
+  ];
+
   return (
-    <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={p.head}>
+    <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={<PlanHead lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} legend={legend} />}>
       <svg id="plan" viewBox={fit.viewBox}
         style={{ aspectRatio: String(fit.aspect) }}
         preserveAspectRatio="xMidYMid meet" role="img"

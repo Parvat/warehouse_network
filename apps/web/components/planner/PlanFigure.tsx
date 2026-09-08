@@ -7,8 +7,8 @@ import {
 } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
 import { columnSpacingFt, detailFor, simplifiedNote, type Detail } from './detail';
-import { FigBoxEl } from './figBox';
-import { planBox, fitFigure, type Extent, type FigBox } from './figText';
+import { FigBoxEl, PlanHead, type LegendItem } from './figBox';
+import { floorFraction, planBox, fitFigure, type Extent, type FigBox } from './figText';
 
 /**
  * Fig. 1 — building plan.
@@ -37,8 +37,6 @@ const G = '#14392B', FILL = '#E8EFEA', Y = '#F2C230', RED = '#A8341C', MUT = '#6
       BLUE = '#1B4FD8';
 
 export interface PlanFigureProps {
-  /** The figure's heading, rendered inside the box it sizes. */
-  head?: React.ReactNode;
   /** Which of the row's boxes this is. */
   boxClass?: string;
   /** The counts under the drawing, inside the box that sizes it. */
@@ -80,7 +78,11 @@ function PlanFigure(p: PlanFigureProps) {
   // their labels and margins carrying the same weight. What decides how big
   // any of it lands on screen is the viewBox fitted to it afterwards.
   const NOMINAL = 470;
-  let detail: Detail | null = null;
+  // What the drawing settled on, read back once it has been fitted. Held on an
+  // object rather than in a plain `let`: TypeScript does not follow an
+  // assignment made inside a nested function, so a `let` still reads as its
+  // initialiser out here, while a property's narrowing resets at the call.
+  const drew: { detail: Detail | null } = { detail: null };
   const sc = NOMINAL / Math.max(p.buildingLengthFt, p.buildingWidthFt);
   const W = p.buildingLengthFt * sc, H = p.buildingWidthFt * sc;
   const vertical = p.orientation === 'width';
@@ -128,6 +130,33 @@ function PlanFigure(p: PlanFigureProps) {
   const lost = new Set(L.columns.filter((c) => !c.absorbed).map((c) => `${c.row}:${c.bay}`));
 
   const runLenFt = (bayStarts.at(-1) ?? 0) + L.bayLengthFt;
+
+  /*
+   * The run's contiguous sections — what the cross aisles break it into.
+   *
+   * A cross aisle is a gap the racking stops either side of, so a section is a
+   * separate block of lanes: a truck reaches it from the aisle at its own end,
+   * and it is entered whether or not the section beside it is. Each one is
+   * marked, centred on its own width — one mark for the whole run would say
+   * that the sections past the cross aisle are reached through the racking.
+   */
+  const segments: { a0: number; a1: number }[] = [];
+  {
+    let seg0 = 0;
+    for (let j = 0; j <= bayStarts.length; j++) {
+      const prev = bayStarts[j - 1], here = bayStarts[j];
+      const breaks = here === undefined || prev === undefined
+        || here - prev > L.bayLengthFt + 0.01;
+      if (j > 0 && breaks) {
+        segments.push({
+          a0: alongStartFt + bayStarts[seg0]!,
+          a1: alongStartFt + prev! + L.bayLengthFt,
+        });
+        seg0 = j;
+      }
+    }
+  }
+
   const parts: React.ReactNode[] = [];
   let key = 0;
 
@@ -207,15 +236,26 @@ function PlanFigure(p: PlanFigureProps) {
     }
   };
 
-  /** Truck entry marks. side -1 before the block across the rows, +1 after it. */
+  /**
+   * The access mark on one end of a lane block. side -1 is the block's near end
+   * across the rows, +1 its far end.
+   *
+   * One mark per section, centred on it, at the end that is actually open. The
+   * head points into the lane, which is where the truck goes: drawn the other
+   * way up it reads as the racking discharging onto the aisle, which is the
+   * opposite of what a drive-in does, on the one type whose whole point is that
+   * the truck drives inside it.
+   */
   const entry = (cFt: number, thickFt: number, side: -1 | 1) => {
     const cPx = (side < 0 ? cFt * sc - 4 : (cFt + thickFt) * sc + 4);
-    for (let k = 1; k <= 3; k++) {
-      const aPx = (alongStartFt + (runLenFt * k) / 4) * sc;
-      const o = at(aPx, 0, cPx, 0);
+    // The mark stands off the block on the side it is drawn on, so inward is
+    // away from that side: down from a mark above the block, up from one below.
+    const inward = -side;
+    for (const s of segments) {
+      const o = at(((s.a0 + s.a1) / 2) * sc, 0, cPx, 0);
       parts.push(<g key={key++} transform={`translate(${o.x.toFixed(1)} ${o.y.toFixed(1)})`
         + (vertical ? ' rotate(-90)' : '')}>
-        <path d={`M0 ${-6 * side}v${6 * side}m0 0l-3 ${-3 * side}m3 ${3 * side}l3 ${-3 * side}`}
+        <path d={`M0 0v${6 * inward}m0 0l-3 ${-3 * inward}m3 ${3 * inward}l3 ${-3 * inward}`}
           stroke={RED} strokeWidth={1.1} fill="none" />
       </g>);
     }
@@ -298,8 +338,21 @@ function PlanFigure(p: PlanFigureProps) {
             stroke={G} strokeWidth={0.5} strokeDasharray="4 3" />);
         }
       }
-      entry(c, block, -1);
-      if (R.openEnds === 2) entry(c, block, 1);
+      /*
+       * Where this block is worked from, as the layout says it is.
+       *
+       * Drive-through is open at both ends and marked at both. Drive-in has
+       * exactly one open end and the solver named it: `front` is the block's
+       * near end across the building, `back` its far end. The end is read here,
+       * never worked out from which side the wall is on — a dealer can flip it,
+       * and a drawing that inferred it would then contradict the layout.
+       */
+      if (R.openEnds === 2) {
+        entry(c, block, -1);
+        entry(c, block, 1);
+      } else if (R.openEnds === 1) {
+        entry(c, block, L.blockAccess[b] === 'back' ? 1 : -1);
+      }
       c += block + aisle;
     }
   }
@@ -387,39 +440,40 @@ function PlanFigure(p: PlanFigureProps) {
       fontFamily="JetBrains Mono" fontSize={fAnno} fill={BLUE}>{p.gridLabel}</text>);
   }
 
-  const legY = PY + H + 16;
-  ext.add(PX, legY - 7, 9, 5);
-  ext.text({ x: PX + 13, y: legY - 2, size: fAnno, text: 'RACK' });
-  const second = R.pick === 'lane' ? 'TRUCK ENTRY' : flue > 0 && d.bays ? 'FLUE' : null;
-  if (second) ext.text({ x: PX + 58, y: legY - 2, size: fAnno, text: `  ${second}` });
-
-    detail = d;
+    drew.detail = d;
     return (
       <>
         <BuildingShell px={PX} py={PY} w={W} h={H} apron={apron} font={fAnno}
           lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} vertical={vertical} />
         {parts}
-
-        <rect x={PX} y={legY - 7} width={9} height={5} fill={FILL} stroke={G} strokeWidth={0.8} />
-        <text x={PX + 13} y={legY - 2} fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}>RACK</text>
-        {R.pick === 'lane' ? (
-          <>
-            <path d={`M${PX + 58} ${legY - 4}v-6m0 6l-3 -3m3 3l3 -3`} stroke={RED} strokeWidth={1.1} fill="none" />
-            <text x={PX + 66} y={legY - 2} fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}>TRUCK ENTRY</text>
-          </>
-        ) : flue > 0 && d.bays ? (
-          <>
-            <rect x={PX + 58} y={legY - 7} width={9} height={5} fill={Y} />
-            <text x={PX + 71} y={legY - 2} fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}>FLUE</text>
-          </>
-        ) : null}
       </>
     );
+  }, {
+    // The back wall of the building is this drawing's floor, and it is the
+    // line the elevations beside it stand their own floors on.
+    floorAt: (font) => ({ y: PY + H, fraction: floorFraction(font) }),
   });
 
+  // The key to the drawing, above it now rather than below it. What it lists is
+  // what was actually drawn: a flue swatch says nothing on a plan simplified
+  // past the point of drawing flues.
+  const flueFt = R.pick === 'lane' ? 0 : p.flueIn / 12;
+  const legend: LegendItem[] = [{
+    label: 'RACK',
+    swatch: <rect x={0.4} y={0.6} width={9.2} height={4.8} fill={FILL} stroke={G} strokeWidth={0.8} />,
+  }];
+  if (R.pick === 'lane') {
+    legend.push({
+      label: 'TRUCK ENTRY',
+      swatch: <path d="M5 0.4v5.2m0 0l-2.4 -2.4m2.4 2.4l2.4 -2.4" stroke={RED} strokeWidth={1.1} fill="none" />,
+    });
+  } else if (flueFt > 0 && drew.detail?.bays) {
+    legend.push({ label: 'FLUE', swatch: <rect x={0.4} y={0.6} width={9.2} height={4.8} fill={Y} /> });
+  }
+
   return (
-    <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={p.head}
-      foot={<><SimplifiedNote detail={detail} layout={L} kind={R.pick === 'lane' ? 'lane' : 'bay'} />{p.foot}</>}>
+    <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={<PlanHead lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} legend={legend} />}
+      foot={<><SimplifiedNote detail={drew.detail} layout={L} kind={R.pick === 'lane' ? 'lane' : 'bay'} />{p.foot}</>}>
     <svg id="plan" viewBox={fit.viewBox}
         style={{ aspectRatio: String(fit.aspect) }}
         preserveAspectRatio="xMidYMid meet" role="img" aria-label={
