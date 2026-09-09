@@ -58,6 +58,19 @@ Read `ARCHITECTURE.md` before changing anything structural.
 10. **Verify a package export exists before importing it.** A wrong name renders
    `undefined` and fails at runtime, not at build.
 
+11. **Do not decouple the figures.** The drawings on a sheet share one row, and
+   the row gives them one height by dividing its width in proportion to their
+   shapes. That shared height is the only reason every drawing's floor lands on
+   one line across the sheet. Do not give a figure a size of its own — a fixed
+   height, a fixed width, its own scale — to stop it moving when something else
+   moves. Tried once: the bay elevation was decoupled so the footprint could no
+   longer resize it, and the mixed sheet's floors came apart by 148 px the same
+   day, because the plan was then free to be a different height from the
+   elevations beside it. The elevation resizing with the building is the price
+   of the shared baseline, and it is the right way round — the sheet is read
+   across, so the drawings must agree with each other before any one of them is
+   convenient on its own.
+
 ## Conventions
 
 - TypeScript strict, `noUncheckedIndexedAccess` on. Do not loosen tsconfig to
