@@ -208,19 +208,6 @@ function Plan(p: CantileverPlanProps) {
     floorAt: (font) => ({ y: PY + H, fraction: floorFraction(font) }),
   });
 
-  /* What the customer is storing, said once under the drawing.
-
-     It used to be a mark inside the SVG, bottom left, on a line of its own
-     above the counts — two lines saying one thing about one drawing, set to
-     two different measures and two different alignments. It is the same kind
-     of statement as the counts, so it is said on the same line as them.
-
-     The span and the run gap used to follow it. They are the solver working,
-     not anything a customer can act on. */
-  const annotation =
-    `${L.productLengthFt}′ PRODUCT · ${L.towersPerRun} TOWERS AT ${ftIn(L.towerCentresFt)}`
-    + ` · ${L.overhangFt}′ OVER EACH END`;
-
   // A tower and the material lying on its arms: the two marks this plan is
   // made of, and the two a reader has to tell apart.
   const legend: LegendItem[] = [
@@ -242,13 +229,6 @@ function Plan(p: CantileverPlanProps) {
         + `${vertical ? 'across the width' : 'along the length'}`}>
         {fit.drawn}
       </svg>
-      <p className="figstats">
-        {annotation}{' · '}
-        {L.rows} {L.rows === 1 ? 'ROW' : 'ROWS'} · {L.runsPerRow} RUNS/ROW
-        {' · '}{L.towersPerRun} TOWERS/RUN
-        {L.lastRowPartial ? ` · LAST ROW ${L.runsInLastRow} OF ${L.runsPerRow}` : ''}
-        {' · '}{L.spareFt.toFixed(0)}&#8242; SPARE
-      </p>
     </FigBoxEl>
   );
 }

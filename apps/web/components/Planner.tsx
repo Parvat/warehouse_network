@@ -13,7 +13,7 @@ import {
   usePlannerModel,
   type ColumnsMode, type PlannerHandoff, type TypeCell,
 } from '@/lib/usePlannerModel';
-import { BUILDING_FT, type MixedPriority } from '@trace/rack-engine';
+import { BUILDING_FT, ftIn, type MixedPriority } from '@trace/rack-engine';
 
 export type { PlannerHandoff } from '@/lib/usePlannerModel';
 
@@ -49,6 +49,63 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
   const asksCant = isLong || isMixed;
   const asksPallet = !isLong;
   const { spec, layout, runs, mixed, building } = m;
+
+  /*
+   * What this floor came to, in one line under the sheet.
+   *
+   * It read under Fig. 1, where it described the plan alone; it is about the
+   * whole run, so it reads under the whole sheet. The figures are set bold and
+   * the words that name them are not, because a reader scanning it is after
+   * the numbers and the words are only there to say which number is which.
+   */
+  const n = (v: React.ReactNode, ...rest: React.ReactNode[]) => (
+    <><b>{v}</b>{rest.length > 0 ? <> {rest}</> : null}</>
+  );
+  const runSummary: React.ReactNode[] = isLong
+    ? [
+      n(`${runs.productLengthFt}′`, 'PRODUCT'),
+      <><b>{runs.towersPerRun}</b> TOWERS AT <b>{ftIn(runs.towerCentresFt)}</b></>,
+      n(`${runs.overhangFt}′`, 'OVER EACH END'),
+      n(runs.rows, runs.rows === 1 ? 'ROW' : 'ROWS'),
+      n(runs.runsPerRow, 'RUNS/ROW'),
+      n(runs.towersPerRun, 'TOWERS/RUN'),
+      ...(runs.lastRowPartial
+        ? [<>LAST ROW <b>{runs.runsInLastRow}</b> OF <b>{runs.runsPerRow}</b></>] : []),
+      n(`${runs.spareFt.toFixed(0)}′`, 'SPARE'),
+    ]
+    : isMixed
+      ? [
+        n(mixed.cantileverRows, 'CANT', mixed.cantileverRows === 1 ? 'ROW' : 'ROWS'),
+        n(layout.rows, 'PALLET ROWS'),
+        n(layout.bays, 'BAYS/ROW'),
+        ...(mixed.strip.lastRowPartial
+          ? [<>STRIP LAST ROW <b>{mixed.strip.runsInLastRow}</b> OF <b>{mixed.strip.runsPerRow}</b></>]
+          : []),
+        n(`${Math.max(0, layout.spareFt).toFixed(0)}′`, 'SPARE'),
+      ]
+      : m.type.onePalletLanes
+        ? [
+          n(layout.blocks, layout.blocks === 1 ? 'BLOCK' : 'BLOCKS'),
+          n(layout.bays, 'LANES'),
+          n(layout.deep, 'DEEP'),
+          n(layout.levels, 'HIGH'),
+          n(layout.palletsAcross, 'WIDE'),
+          ...(layout.baysLostToColumns > 0
+            ? [n(layout.baysLostToColumns, 'LOST TO COLUMNS')] : []),
+          n(`${Math.max(0, layout.spareFt).toFixed(0)}′`, 'SPARE'),
+        ]
+        : [
+          n(layout.rows, 'ROWS'),
+          n(layout.bays, 'BAYS/ROW'),
+          // Depth, height and width tell one deep type from another, so they
+          // are named together wherever a type has depth to speak of.
+          ...(layout.deep > 1
+            ? [n(layout.deep, 'DEEP'), n(layout.levels, 'HIGH'), n(layout.palletsAcross, 'WIDE')]
+            : []),
+          ...(layout.baysLostToColumns > 0
+            ? [n(layout.baysLostToColumns, 'LOST TO COLUMNS')] : []),
+          n(`${Math.max(0, layout.spareFt).toFixed(0)}′`, 'SPARE'),
+        ];
 
   const blocking = m.flags.filter((f) => f.severity === 'blocking').length;
   const checks = m.flags.filter((f) => f.severity === 'check').length;
@@ -223,19 +280,6 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
             </div>
           </div>
 
-          {m.fromFinder && (
-            <p className="fromfinder">
-              <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" fill="none"
-                strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="8.6" />
-              </svg>
-              <span>
-                Starting from your rack finder answers — <b>{isLong ? `Cantilever racking` : `${m.type.name} rack`}</b>
-                {m.matchPct && <i>{m.matchPct}% match</i>}.{isLong ? " Set the arms and sides above." : " Try any other type below to compare."}
-              </span>
-            </p>
-          )}
-
           <div className="stage">
             {/* A plan is a landscape box and an elevation a portrait one, so a
                 row holding one of each divides its width between them in
@@ -271,11 +315,21 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
 
               {isMixed ? (
                 <>
+                  {/* The pallet bay is the same bay on a mixed floor as on a
+                      floor of nothing else, so it is told the same things about
+                      itself, and it builds its own heading as it does there.
+                      Left out, it had no section to offer; handed a ready-made
+                      heading, it had no control to reach one with — the control
+                      that turns the bay lives in the heading the figure builds.
+                      Between them, this was the one figure on the sheet whose
+                      second view could not be got to. */}
                   <ElevationFigure spec={spec} clearHeightFt={building.clearHeightFt}
                     palletWidthIn={m.pallet.widthIn} palletLoadHeightIn={m.pallet.loadHeightIn}
+                    palletDepthIn={m.pallet.depthIn}
+                    lane={m.type.onePalletLanes} deep={layout.deep} openEnds={m.type.openEnds}
+                    depthSection={m.type.depthSection}
                     box={elBox(building.lengthFt, building.widthFt, true)} boxClass="el"
-                    head={<ElHead title="Fig. 2 — Pallet bay"
-                      sub={`${spec.palletsPerBay} pallets / bay`} />} />
+                    title="Fig. 2 — Pallet bay" sub={`${spec.palletsPerBay} pallets / bay`} />
                   <CantileverElevationFigure layout={mixed.strip} boxClass="el"
                     clearHeightFt={building.clearHeightFt}
                     box={elBox(building.lengthFt, building.widthFt, true)}
@@ -301,6 +355,8 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
               )}
             </div>
           </div>
+
+          <RunSummary cells={runSummary} />
 
           {m.types.length > 0 && <TypeRow cells={m.types} long={isLong} mixed={isMixed} />}
           <p className="typenote">{m.blurb}</p>
@@ -408,6 +464,26 @@ function ElHead({ title = 'Fig. 2 — Elevation, one bay', sub }: {
       <span className="t">{title}</span>
       <span className="r mono">{sub}</span>
     </div>
+  );
+}
+
+
+/**
+ * The run summary, across the foot of the sheet.
+ *
+ * Mono throughout, because it is a row of figures; the figures are bold and
+ * the words naming them are not.
+ */
+function RunSummary({ cells }: { cells: React.ReactNode[] }) {
+  return (
+    <p className="runsummary mono">
+      {cells.map((c, i) => (
+        // The cells are positional and fixed for a given sheet, so the index
+        // is the identity there is.
+        // eslint-disable-next-line react/no-array-index-key
+        <span key={i}>{i > 0 ? <i aria-hidden="true"> · </i> : null}{c}</span>
+      ))}
+    </p>
   );
 }
 

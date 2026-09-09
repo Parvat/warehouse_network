@@ -415,18 +415,38 @@ function ElevationFigure({
       {pitchText}</text>);
   }
 
-  ext.add(X0, FL + 35);
-  dims.push(<line key={key++} x1={X0} y1={FL + 30} x2={X1} y2={FL + 30} stroke={BLUE} />);
-  dims.push(<line key={key++} x1={X0} y1={FL + 25} x2={X0} y2={FL + 35} stroke={BLUE} />);
-  dims.push(<line key={key++} x1={X1} y1={FL + 25} x2={X1} y2={FL + 35} stroke={BLUE} />);
-  // What that dimension is. A lane is measured across; a beam is not there to
-  // measure in one, and the depth view is measuring the row, not the bay.
-  const acrossText = v === 'depth'
-    ? `${lane ? `${deep} × ` : ''}${palletDepthIn}" PALLET`
-    : lane ? `LANE ${laneIn}"` : `BEAM ${beam}"`;
-  ext.text({ x: CX, y: FL + 44, size: fDim, text: acrossText, anchor: 'middle' });
-  dims.push(<text key={key++} x={CX} y={FL + 44} textAnchor="middle"
-    fontFamily="JetBrains Mono" fontSize={fDim} fill={BLUE}>{acrossText}</text>);
+  /*
+   * What the bay measures across, in the one view where that is not said twice.
+   *
+   * The front view is dimensioned `BEAM 96"` — and the summary directly under
+   * the drawing opens `BEAM 96" · 2P · 4,000 LB`, so the figure was given twice,
+   * an inch apart, in the same face. The summary is the one that carries the
+   * section and its rating with it, so the dimension goes rather than the line
+   * under it. It goes whole: ticks and a rule with no figure on them are not a
+   * dimension, they are the stray mark this drawing has had taken out before.
+   *
+   * The section keeps its own, which measures the pallet rather than the beam
+   * and so is not said anywhere else.
+   */
+  // The rule under the bay, which is what the drawing is wide by. It carries no
+  // figure in the front view: the summary directly under it opens with the beam
+  // and its rating, and the figure was being given twice an inch apart. The
+  // section keeps its own, which measures the pallet rather than the beam and
+  // so is said nowhere else.
+  //
+  // The whole band sits closer under the floor than it did. It was set for a
+  // label at FL+44 that only one of the two views draws, and in the other it
+  // was an empty inch between the drawing and the line under it.
+  ext.add(X0, FL + 20);
+  dims.push(<line key={key++} x1={X0} y1={FL + 15} x2={X1} y2={FL + 15} stroke={BLUE} />);
+  dims.push(<line key={key++} x1={X0} y1={FL + 10} x2={X0} y2={FL + 20} stroke={BLUE} />);
+  dims.push(<line key={key++} x1={X1} y1={FL + 10} x2={X1} y2={FL + 20} stroke={BLUE} />);
+  if (v === 'depth') {
+    const acrossText = `${lane ? `${deep} × ` : ''}${palletDepthIn}" PALLET`;
+    ext.text({ x: CX, y: FL + 29, size: fDim, text: acrossText, anchor: 'middle' });
+    dims.push(<text key={key++} x={CX} y={FL + 29} textAnchor="middle"
+      fontFamily="JetBrains Mono" fontSize={fDim} fill={BLUE}>{acrossText}</text>);
+  }
   // last, so a frame breaking into the sprinkler zone reads as a breach
   const breach = topY < clY - 0.5;
   dims.push(<rect key={key++} x={CX - BLEED} y={spY} width={BLEED * 2} height={clY - spY}

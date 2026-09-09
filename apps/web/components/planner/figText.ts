@@ -291,6 +291,9 @@ export interface FittedFigure<T> {
   /** What the drawing emitted, at the settled font size. */
   drawn: T;
   viewBox: string;
+  /** The fitted box, in viewBox units — what a pixel scale is measured against. */
+  w: number;
+  h: number;
   /** The shape the container should take, so the drawing fills it exactly. */
   aspect: number;
   /** The font size that was used, in viewBox units. */
@@ -334,7 +337,10 @@ export function fitFigure<T>(
     widthPx = boxWidthPx(box, fitted.aspect);
     font = +Math.max(0.1, (Math.max(9, targetPx) * fitted.w) / widthPx).toFixed(2);
   }
-  return { drawn: drawn as T, viewBox: fitted.viewBox, aspect: fitted.aspect, font };
+  return {
+    drawn: drawn as T, viewBox: fitted.viewBox,
+    w: fitted.w, h: fitted.h, aspect: fitted.aspect, font,
+  };
 }
 
 /* ── the elevation's shared frame ─────────────────────────────────────── */
@@ -376,10 +382,19 @@ export function elevationFrameY(spY: number, font: number): { y0: number; y1: nu
   // top edge. Ten was the offset and the cap height only, which left the pad
   // to be found by growing the frame a step.
   const need = 7 + font * MONO.ascent + FIG_PAD;
-  // Below the floor: the width dimension at FL+30, the label naming it at
-  // FL+44, and the uniform pad under that. Set clear of the lot, so neither
-  // elevation has to grow its frame and part company with the other on scale.
-  return { y0: spY - Math.ceil(need / LOCK_STEP) * LOCK_STEP, y1: EL_FRAME.FL + 56 };
+  // Below the floor: the width rule at FL+15 with its ticks to FL+20, the label
+  // the section puts under it at FL+29, and the uniform pad beneath that — 40
+  // units, and the section lands at 39.2 of them.
+  //
+  // Set clear of the lot, and it has to stay clear: `floorFraction` reads this
+  // range to place the floor, but `fitViewBox` grows a lock that its contents
+  // overrun. A range a hair under what the section draws would be grown a whole
+  // step for that view alone, and the plan — fitted to the range as written —
+  // would part company with the elevation it is supposed to stand level with.
+  //
+  // No clearer either: every spare unit is empty floor between the drawing and
+  // whatever is written beneath the figure.
+  return { y0: spY - Math.ceil(need / LOCK_STEP) * LOCK_STEP, y1: EL_FRAME.FL + 40 };
 }
 
 /**

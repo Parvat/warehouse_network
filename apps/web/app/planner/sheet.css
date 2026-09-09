@@ -61,12 +61,24 @@
 .a3 .segs button[aria-pressed="true"]{background:var(--pine);color:#fff;border-color:var(--pine)}
 .a3 .derive{margin:0 16px 14px;padding:8px 11px;background:var(--zinc-2);border-left:3px solid var(--blue);font-size:12.5px;color:var(--ink-2)}
 .a3 .derive b{font-family:'JetBrains Mono';color:var(--ink)}
-.a3 .fromfinder{display:flex;align-items:center;gap:10px;padding:11px 18px;background:var(--mint);
-  border-bottom:1px solid var(--line);font-size:13px;color:var(--pine)}
-.a3 .fromfinder[hidden]{display:none}
-.a3 .fromfinder b{font-weight:600}
-.a3 .fromfinder i{font-style:normal;font-family:'JetBrains Mono';font-size:11px;color:var(--pine-2);
-  background:var(--paper);border:1px solid var(--line);padding:2px 7px;border-radius:2px;margin-left:4px}
+/* What this floor came to, across the foot of the sheet.
+
+   It reads under Fig. 1 no longer: it is about the whole run rather than the
+   plan alone, so it sits under the whole sheet. The band is the one the finder
+   banner used at the top of the sheet — the same mint ground and hairline, the
+   rule moved to the edge it now sits against. The figures carry the weight and
+   the words naming them do not, because a reader scanning a row of numbers is
+   after the numbers. */
+/* Centred text rather than a flex row: as flex items the cells butt together
+   and the space before each separator is trimmed off the start of its item, so
+   the dots sat against the word in front of them. The separator carries its own
+   margins instead, and is even on both sides. */
+.a3 .runsummary{margin:0;padding:11px 18px;text-align:center;
+  background:var(--mint);border-top:1px solid var(--line);
+  font-family:'JetBrains Mono';font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--pine);line-height:1.8}
+.a3 .runsummary b{font-weight:700;color:var(--pine-2)}
+.a3 .runsummary i{font-style:normal;color:var(--pine);opacity:.45;margin:0 .45em}
 .a3 .stage{padding:16px 16px 12px;background:linear-gradient(var(--zinc-2) 1px,transparent 1px) 0 0/100% 24px,linear-gradient(90deg,var(--zinc-2) 1px,transparent 1px) 0 0/24px 100%,var(--paper)}
 .a3 .figs{display:flex;gap:24px;align-items:stretch;justify-content:center;flex-wrap:nowrap}
 .a3 .figbox{display:flex;flex-direction:column;min-width:0;position:relative}
@@ -428,14 +440,23 @@
    This is what stops the layout moving after every change: the container
    follows the drawing rather than the drawing being scaled inside a container
    that was sized by something else. */
+/* The row divides its width between the figures in proportion to their shapes,
+   so every box comes out the same height without anything being told what that
+   height is, and no drawing is fitted into a box of the wrong shape.
+
+   This is what stops the layout moving after every change: the container
+   follows the drawing rather than the drawing being scaled inside a container
+   that was sized by something else. */
 .a3 .figs{display:flex;gap:24px;align-items:flex-start;justify-content:center;
   flex-wrap:nowrap}
 .a3 .figbox{display:flex;flex-direction:column;position:relative;
   flex:var(--aspect,1) 1 0;min-width:0}
 .a3 .figbox svg{display:block;width:100%;height:auto;margin-top:auto}
 
-
-
+/* The plan is wrapped, so the expand control has a stable box around the
+   drawing. The wrapper takes the bottom-anchoring the SVG carried. */
+.a3 .figbox.pl .planfit{display:block;margin-top:auto;min-width:0}
+.a3 .figbox.pl .planfit svg{margin-top:0}
 /* Every heading gets the same two lines whether it needs them or not: the box
    below it is sized by the drawing's shape, so any difference in the chrome
    above lands as a difference in height between figures that should match. */
@@ -496,3 +517,36 @@
   border:1px solid var(--line);background:var(--paper);color:var(--blue);border-radius:2px;
   font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:.08em;text-transform:uppercase}
 .a3 .figview:hover{border-color:var(--blue)}
+
+/* A control in the figure's top-right corner, outside the heading: the heading
+   is clipped to a fixed height so that chrome above a drawing cannot change
+   where the drawing sits, and anything opened from inside it would be cut off
+   at the first line. The heading keeps clear of it with a pad instead. */
+.a3 .figtool{position:absolute;top:0;right:0;z-index:3}
+.a3 .figbox:has(.figtool) .fighead{padding-right:22px}
+.a3 .figexpandbtn{display:flex;align-items:center;justify-content:center;width:18px;height:18px;
+  padding:0;cursor:pointer;border:0;background:none;color:var(--steel);border-radius:2px}
+.a3 .figexpandbtn:hover{color:var(--blue)}
+.a3 .figexpandbtn:focus-visible{outline:1px solid var(--blue);outline-offset:1px}
+
+/* The same drawing, larger and pannable. The sheet behind it is untouched —
+   this covers the page, it does not replace the figure. */
+.a3 .figoverlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;
+  justify-content:center;padding:28px;background:rgb(26 29 27 / .55)}
+.a3 .figoverlaybox{display:flex;flex-direction:column;width:min(1400px,100%);
+  height:min(900px,100%);background:var(--paper);border:1px solid var(--line);
+  border-radius:2px;overflow:hidden}
+.a3 .figoverlaybar{display:flex;align-items:center;justify-content:space-between;
+  padding:9px 12px;border-bottom:1px solid var(--line);
+  font-family:'JetBrains Mono';font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--steel)}
+.a3 .figoverlayx{padding:0;width:20px;height:20px;cursor:pointer;border:0;background:none;
+  color:var(--steel);font-size:17px;line-height:1}
+.a3 .figoverlayx:hover{color:var(--blue)}
+/* The whole drawing, fitted to the window — no scrollbar, because seeing all
+   of it at once is the whole point of opening it. */
+.a3 .figoverlayfit{flex:1 1 auto;display:flex;align-items:center;justify-content:center;
+  min-height:0;padding:16px;
+  background:linear-gradient(var(--zinc-2) 1px,transparent 1px) 0 0/100% 24px,
+    linear-gradient(90deg,var(--zinc-2) 1px,transparent 1px) 0 0/24px 100%,var(--paper)}
+.a3 .figoverlayfit svg{display:block;max-width:100%;max-height:100%;width:auto;height:auto;margin:0}

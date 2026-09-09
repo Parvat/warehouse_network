@@ -77,9 +77,49 @@ function MixedPlan(p: MixedPlanProps) {
   };
 
   const parts: React.ReactNode[] = [];
+  /*
+   * Marks that belong over the drawing rather than in it.
+   *
+   * SVG has no z-index: what is painted last is on top, and a cross aisle is a
+   * white strip painted across the whole building. The shared aisle is
+   * dimensioned near the far end of the run, so wherever a cross aisle fell
+   * there the strip went over the label and took the front of it off — leaving
+   * `RED AISLE 14'-0"` on the drawing. The dimension is about the strip either
+   * side of the aisle, not about the floor under it, so it goes on top.
+   */
+  const over: React.ReactNode[] = [];
   let key = 0;
 
   const alongStartFt = p.wallClearanceFt + DOCK_APRON_FT;
+
+  /**
+   * The access mark on one end of a lane block — as the pallet-only plan draws
+   * it. side -1 is the block's near end across the rows, +1 its far end.
+   *
+   * One mark per section of the run, centred on it, pointing into the lane.
+   */
+  const entry = (cFt: number, thickFt: number, side: -1 | 1) => {
+    const cPx = (side < 0 ? cFt * sc - 4 : (cFt + thickFt) * sc + 4);
+    const inward = -side;
+    let seg0 = 0;
+    const starts = L.bayStartsFt;
+    for (let j = 0; j <= starts.length; j++) {
+      const prev = starts[j - 1], here = starts[j];
+      const breaks = here === undefined || prev === undefined
+        || here - prev > L.bayLengthFt + 0.01;
+      if (j > 0 && breaks) {
+        const a0 = alongStartFt + starts[seg0]!;
+        const a1 = alongStartFt + prev! + L.bayLengthFt;
+        const o = at(((a0 + a1) / 2) * sc, 0, cPx, 0);
+        parts.push(<g key={key++} transform={`translate(${o.x.toFixed(1)} ${o.y.toFixed(1)})`
+          + (vertical ? ' rotate(-90)' : '')}>
+          <path d={`M0 0v${6 * inward}m0 0l-3 ${-3 * inward}m3 ${3 * inward}l3 ${-3 * inward}`}
+            stroke={RED} strokeWidth={1.1} fill="none" />
+        </g>);
+        seg0 = j;
+      }
+    }
+  };
 
   /* The cursor walks in from the strip's wall along the across axis, so the two
      zones cannot drift apart. The strip stays on the side the customer chose
@@ -93,8 +133,25 @@ function MixedPlan(p: MixedPlanProps) {
     cursor += dir * ft;
     return start;
   };
+  /**
+   * What a band is, written beside it.
+   *
+   * With the rows running along the length the bands stack down the page and
+   * each gets a line in the right margin. Across the width they stack across
+   * it, and there is no margin to use — so the label reads up the band itself,
+   * the way the pallet-only plan calls out its aisles. It used to give up and
+   * draw nothing at all there, which left that orientation with no aisle widths
+   * and no row labels on it anywhere.
+   */
   const marginLabel = (cFt: number, text: string, fill = MUT, size = fAnno) => {
-    if (vertical) return;      // the margin is the bottom edge there, and it is full
+    if (vertical) {
+      const o = box(alongStartFt + 4, 0, cFt, 0);
+      ext.text({ x: o.x, y: o.y, size, text, anchor: 'end', rotate: -90 });
+      parts.push(<text key={key++}
+        transform={`translate(${o.x.toFixed(1)} ${o.y.toFixed(1)}) rotate(-90)`}
+        textAnchor="end" fontFamily="JetBrains Mono" fontSize={size} fill={fill}>{text}</text>);
+      return;
+    }
     ext.text({ x: PX + W + 6, y: PY + cFt * sc + 3, size, text });
     parts.push(<text key={key++} x={PX + W + 6} y={PY + cFt * sc + 3}
       fontFamily="JetBrains Mono" fontSize={size} fill={fill}>{text}</text>);
@@ -137,7 +194,7 @@ function MixedPlan(p: MixedPlanProps) {
     cantRow(take(sides === 2 ? S.doubleDepthFt : S.singleDepthFt), sides, r);
     if (r < M.cantileverRows - 1) {
       const ay = take(M.cantileverAisleFt);
-      marginLabel(ay + M.cantileverAisleFt / 2, `${M.cantileverAisleFt}′`, '#BFBBB0');
+      marginLabel(ay + M.cantileverAisleFt / 2, `${M.cantileverAisleFt}′`, BLUE);
     }
   }
 
@@ -163,7 +220,9 @@ function MixedPlan(p: MixedPlanProps) {
     const a = box(alongStartFt, 0, fromC, 0), b = box(alongStartFt, 0, toC, 0);
     const mid = vertical ? (a.x + b.x) / 2 : (a.y + b.y) / 2;
     const x = vertical ? mid : PX - 42;
-    const y = vertical ? PY - 30 : mid;
+    // Clear of the length dimension, which is ruled at PY-18 and labelled at
+    // PY-24 — a zone name at PY-30 landed on the number.
+    const y = vertical ? PY - 42 : mid;
     // Across the width the zones stack along the page, so the label lies flat
     // above the building instead; along it they stack down the left margin.
     if (vertical) {
@@ -202,7 +261,7 @@ function MixedPlan(p: MixedPlanProps) {
   const tick0 = seg(dimA - 3, 6, shC, 0);
   const tick1 = seg(dimA - 3, 6, shC + M.sharedAisleFt, 0);
   const lab = box(dimA - 4, 0, midC, 0);
-  parts.push(
+  over.push(
     <line key={key++} x1={dim.x1} y1={dim.y1} x2={dim.x2} y2={dim.y2} stroke={BLUE} />,
     <line key={key++} x1={tick0.x1} y1={tick0.y1} x2={tick0.x2} y2={tick0.y2} stroke={BLUE} />,
     <line key={key++} x1={tick1.x1} y1={tick1.y1} x2={tick1.x2} y2={tick1.y2} stroke={BLUE} />,
@@ -274,7 +333,7 @@ function MixedPlan(p: MixedPlanProps) {
       }
       band(fc + fh, deep * fd, null, deep);
       const ac = take(p.aisleFt);
-      marginLabel(ac + p.aisleFt / 2, `${p.aisleFt}′`, '#BFBBB0');
+      marginLabel(ac + p.aisleFt / 2, `${p.aisleFt}′`, BLUE);
     }
     // the far wall is a real wall, so its row is single
     if (L.wallRows > 0) {
@@ -284,7 +343,28 @@ function MixedPlan(p: MixedPlanProps) {
     const blockFt = deep * fd;
     if (R.openEnds === 2) take(p.aisleFt);
     for (let bkt = 0; bkt < L.blocks; bkt++) {
-      band(take(blockFt), blockFt, `${deep} deep`, deep);
+      const c0 = take(blockFt);
+      band(c0, blockFt, `${deep} deep`, deep);
+      /*
+       * The same access marks the pallet-only plan draws.
+       *
+       * A lane block is a lane block whatever else is on the floor: this zone
+       * had none, so a drive-in strip beside a cantilever run was drawn as
+       * racking nobody could get into.
+       *
+       * The cursor walks in from the strip's wall, so when the strip is on the
+       * far wall it walks backwards and the layout's near end is this
+       * drawing's far edge. The block's own ends are named in the layout's
+       * terms, so the mapping is applied here rather than in what it says.
+       */
+      const frontSide: -1 | 1 = dir === 1 ? -1 : 1;
+      if (R.openEnds === 2) {
+        entry(c0, blockFt, -1);
+        entry(c0, blockFt, 1);
+      } else if (R.openEnds === 1) {
+        entry(c0, blockFt,
+          L.blockAccess[bkt] === 'back' ? (frontSide === -1 ? 1 : -1) : frontSide);
+      }
       take(p.aisleFt);
     }
   }
@@ -346,6 +426,7 @@ function MixedPlan(p: MixedPlanProps) {
         <BuildingShell px={PX} py={PY} w={W} h={H} apron={apron} font={fAnno}
           lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} vertical={vertical} />
         {parts}
+        {over}
       </>
     );
   }, {
@@ -366,6 +447,14 @@ function MixedPlan(p: MixedPlanProps) {
       swatch: <rect x={0.4} y={0.6} width={9.2} height={4.8} fill={FILL} stroke={G} strokeWidth={0.8} />,
     },
   ];
+  // A key names what is drawn: where the pallet zone is lanes, the access marks
+  // are on the plan and belong in it.
+  if (R.pick === 'lane') {
+    legend.push({
+      label: 'TRUCK ENTRY',
+      swatch: <path d="M5 0.4v5.2m0 0l-2.4 -2.4m2.4 2.4l2.4 -2.4" stroke={RED} strokeWidth={1.1} fill="none" />,
+    });
+  }
 
   return (
     <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={<PlanHead lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} legend={legend} />}>
@@ -378,12 +467,6 @@ function MixedPlan(p: MixedPlanProps) {
         + `${vertical ? 'across the width' : 'along the length'}`}>
         {fit.drawn}
       </svg>
-      <p className="figstats">
-        {M.cantileverRows} CANT {M.cantileverRows === 1 ? 'ROW' : 'ROWS'}
-        {' · '}{L.rows} PALLET ROWS · {L.bays} BAYS/ROW
-        {S.lastRowPartial ? ` · STRIP LAST ROW ${S.runsInLastRow} OF ${S.runsPerRow}` : ''}
-        {' · '}{Math.max(0, L.spareFt).toFixed(0)}&#8242; SPARE
-      </p>
     </FigBoxEl>
   );
 }

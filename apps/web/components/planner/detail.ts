@@ -84,16 +84,31 @@ export function detailFor(a: {
   const pxPerFt = a.renderedWidthPx / Math.max(1, a.buildingLengthFt);
   const pxPerBay = pxPerFt * Math.max(0.1, a.bayLengthFt);
   const elements = estimateElements(a);
+  /*
+   * The bays are always drawn.
+   *
+   * A row used to collapse to a plain band once a bay fell under a few pixels,
+   * and the figure said so underneath. But a band is a different drawing: it
+   * says a row is continuous racking, where a bay is the unit the building is
+   * actually made of and the unit every count on the sheet is in. A reader
+   * comparing two buildings was comparing a picture of bays with a picture of
+   * bands, and the bay is a fixed thing — an upright, a beam pair and the
+   * pallets between them — so a longer building holds more of them, never
+   * smaller ones.
+   *
+   * `level` still says how much room there was, because the column marks and
+   * the per-row labels do still stand down when there is none.
+   */
   const level: DetailLevel =
     pxPerBay >= BAY_FULL_PX && elements <= ELEMENT_CEILING ? 'full' : 'banded';
   const columnsIndividually = pxPerFt * (a.columnSpacingFt ?? 40) >= COLUMN_PX;
   return {
     level, pxPerFt, pxPerBay,
-    bays: level === 'full',
+    bays: true,
     perRowLabels: level === 'full',
     columnsIndividually,
     estimatedElements: elements,
-    simplified: level !== 'full' || !columnsIndividually,
+    simplified: !columnsIndividually,
   };
 }
 
@@ -109,12 +124,10 @@ export function simplifiedNote(d: Detail, a: {
   unit?: 'bay' | 'lane';
 }): string | null {
   if (!d.simplified) return null;
+  // The rows are drawn as bays at every size now, so there is no longer a band
+  // to own up to — only the column grid still stands down when the marks would
+  // land on top of one another.
   const parts: string[] = [];
-  if (d.level === 'banded') {
-    const unit = a.unit === 'lane' ? 'lanes' : 'bays';
-    parts.push(`${a.rows.toLocaleString()} rows drawn as bands, `
-      + `${a.bays.toLocaleString()} ${unit} each`);
-  }
   if (!d.columnsIndividually && a.columns > 0) {
     parts.push(`${a.columns.toLocaleString()} columns drawn as a grid`);
   }

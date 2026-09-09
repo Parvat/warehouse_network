@@ -7,7 +7,7 @@ import {
 } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
 import { columnSpacingFt, detailFor, simplifiedNote, type Detail } from './detail';
-import { FigBoxEl, PlanHead, type LegendItem } from './figBox';
+import { FigBoxEl, FigExpand, PlanHead, type LegendItem } from './figBox';
 import { floorFraction, planBox, fitFigure, type Extent, type FigBox } from './figText';
 
 /**
@@ -277,7 +277,15 @@ function PlanFigure(p: PlanFigureProps) {
     ext.text({ x: PX + W + 6, y: my + 3, size: fAnno, text: `FLUE ${p.flueIn}"` });
   };
 
-  /** One aisle width, called out where there is room for it. */
+  /**
+   * One aisle width, called out where there is room for it.
+   *
+   * With the rows running across the width there is no margin to hang a label
+   * in, so this one reads up the aisle itself — among the racking, on the ruled
+   * ground. In the pale grey the margin labels use it was there and could not
+   * be seen. It is a dimension, so it takes the blue the rest of the
+   * dimensions on this drawing take, the cross aisle beside it included.
+   */
   let aisleLabelled = false;
   const aisleCallout = (cFt: number) => {
     if (!vertical || aisleLabelled) return;
@@ -286,7 +294,7 @@ function PlanFigure(p: PlanFigureProps) {
     ext.text({ x: o.x, y: o.y, size: fAnno, text: `${aisle}' AISLE`, anchor: 'end', rotate: -90 });
     parts.push(<text key={key++}
       transform={`translate(${o.x.toFixed(1)} ${o.y.toFixed(1)}) rotate(-90)`}
-      textAnchor="end" fontFamily="JetBrains Mono" fontSize={fAnno} fill="#BFBBB0">
+      textAnchor="end" fontFamily="JetBrains Mono" fontSize={fAnno} fill={BLUE}>
       {aisle}&#8242; AISLE</text>);
   };
 
@@ -471,9 +479,26 @@ function PlanFigure(p: PlanFigureProps) {
     legend.push({ label: 'FLUE', swatch: <rect x={0.4} y={0.6} width={9.2} height={4.8} fill={Y} /> });
   }
 
+  /*
+   * The whole building, fitted to the figure, at whatever scale that comes to.
+   *
+   * No scrollbar and nothing left out: a plan is read as one shape, and a
+   * drawing you have to push around to see the end of is a worse answer to a
+   * big building than a small drawing of all of it. What keeps it legible at
+   * size is that a bay is a fixed thing drawn at the plan's scale, so a bigger
+   * building holds more bays rather than smaller ones — and the expanded view
+   * is there when the whole of it is wanted larger.
+   */
   return (
     <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={<PlanHead lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} legend={legend} />}
-      foot={<><SimplifiedNote detail={drew.detail} layout={L} kind={R.pick === 'lane' ? 'lane' : 'bay'} />{p.foot}</>}>
+      foot={<><SimplifiedNote detail={drew.detail} layout={L} kind={R.pick === 'lane' ? 'lane' : 'bay'} />{p.foot}</>}
+      info={(
+        <FigExpand label={`Plan — ${p.buildingLengthFt} × ${p.buildingWidthFt} ft`}
+          viewBox={fit.viewBox} aspect={fit.aspect}>
+          {fit.drawn}
+        </FigExpand>
+      )}>
+    <div className="planfit">
     <svg id="plan" viewBox={fit.viewBox}
         style={{ aspectRatio: String(fit.aspect) }}
         preserveAspectRatio="xMidYMid meet" role="img" aria-label={
@@ -482,44 +507,9 @@ function PlanFigure(p: PlanFigureProps) {
         + `${vertical ? 'across the width' : 'along the length'}`}>
       {fit.drawn}
     </svg>
+    </div>
     </FigBoxEl>
   );
 }
 
-/**
- * The counts read under the drawing rather than inside it: set in the SVG they
- * ran past the building's frame on a wide layout, and a caption can centre and
- * wrap instead.
- */
-function PlanFigureWithStats(p: PlanFigureProps) {
-  const R = rackType(p.kind), L = p.layout;
-  // A lane is counted in lanes. Bays describe a beam, and there is no beam in a
-  // drive-in lane — the pallet rests on rails along the uprights.
-  if (R.onePalletLanes) {
-    return (
-      <PlanFigure {...p} foot={
-        <p className="figstats">
-          {L.blocks} {L.blocks === 1 ? 'BLOCK' : 'BLOCKS'} · {L.bays} LANES
-          {' · '}{L.deep} DEEP · {L.levels} HIGH · {L.palletsAcross} WIDE
-          {L.baysLostToColumns > 0 ? ` · ${L.baysLostToColumns} LOST TO COLUMNS` : ''}
-          {' · '}{Math.max(0, L.spareFt).toFixed(0)}&#8242; SPARE
-        </p>
-      } />
-    );
-  }
-
-  return (
-    <PlanFigure {...p} foot={
-      <p className="figstats">
-        {L.rows} ROWS{' · '}{L.bays} BAYS/ROW
-        {/* Depth, height and width are what tell one deep type from another, so
-            they are named together wherever a type has depth to speak of. */}
-        {L.deep > 1 ? ` · ${L.deep} DEEP · ${L.levels} HIGH · ${L.palletsAcross} WIDE` : ''}
-        {L.baysLostToColumns > 0 ? ` · ${L.baysLostToColumns} LOST TO COLUMNS` : ''}
-        {' · '}{Math.max(0, L.spareFt).toFixed(0)}&#8242; SPARE
-      </p>
-    } />
-  );
-}
-
-export default memo(PlanFigureWithStats);
+export default memo(PlanFigure);
