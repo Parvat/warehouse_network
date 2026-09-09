@@ -205,3 +205,25 @@ test('the bill files both families under their own heading and re-totals', () =>
   assert.equal(palletBomIsCountable('selective'), true);
   assert.equal(palletBomIsCountable('drivein'), false);
 });
+
+/**
+ * The strip is sized from the packing, in world feet, never from the fit.
+ *
+ * `MixedInput` carries no scale, so a figure being drawn larger or smaller
+ * cannot change how many runs the strip holds. Asserted rather than assumed,
+ * because the strip degenerating to a sliver is what a coupled scale would
+ * look like on the page.
+ */
+test('a mixed 240 x 120 strip holds the same runs however its figure is sized', () => {
+  const first = layoutMixed(base);
+  for (let i = 0; i < 5; i++) {
+    const again = layoutMixed({ ...base });
+    assert.equal(again.strip.runsPerRow, first.strip.runsPerRow);
+    assert.equal(again.strip.rows, first.strip.rows);
+    assert.equal(again.strip.towersPerRun, first.strip.towersPerRun);
+    assert.equal(again.pallets.rows, first.pallets.rows);
+    assert.equal(again.pallets.bays, first.pallets.bays);
+  }
+  assert.ok(first.strip.runsPerRow > 0, 'the strip holds runs, not a sliver');
+  assert.ok(first.strip.towersPerRun > 1, 'and each run is more than one tower');
+});

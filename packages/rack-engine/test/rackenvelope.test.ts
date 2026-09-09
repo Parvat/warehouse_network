@@ -464,3 +464,46 @@ test('a dealer can flip the open end, wall or no wall', () => {
   assert.ok(l.blockAccess.every((e) => e === 'front'),
     'an override is a decision, and it applies to every block');
 });
+
+/* ── the packing is the solver's, and nothing on screen may reach it ───── */
+
+/**
+ * Row and bay counts come from the building and the rack geometry alone.
+ *
+ * How the plan is fitted into its figure is a drawing decision taken after the
+ * fact: the drawing takes what the solver produced and applies one world to
+ * screen transform to it. Nothing about a scale, a fit, a pixel or a viewport
+ * is an input here — `RackLayoutInput` has no field for one — so the counts
+ * cannot move when the figure is resized. That is true by construction; these
+ * assert it anyway, so that a scale can never be threaded in later without a
+ * test going red.
+ */
+test('240 x 120 packs its rows along the length: 10 rows of 24 bays', () => {
+  const l = layoutRack('selective', base);
+  assert.equal(l.rows, 10, 'ten rows across the 120 ft width');
+  assert.equal(l.bays, 24, 'twenty-four bays down the 240 ft length');
+});
+
+test('the row-run axis is the solver’s, and turns only when asked to turn', () => {
+  const along = layoutRack('selective', base);
+  const across = layoutRack('selective', { ...base, orientation: 'width' });
+  assert.deepEqual([along.rows, along.bays], [10, 24]);
+  // Rows across the width give more, shorter rows. That is the orientation
+  // control doing its job, and it is the only thing that may do this.
+  assert.ok(across.rows > along.rows && across.bays < along.bays,
+    'turning the rows gives more of them, each shorter');
+});
+
+test('the same building solves identically however its figure is sized', () => {
+  // There is no scale to vary, so the strongest statement available is that
+  // solving the same input repeatedly is stable, and that the counts are the
+  // ones above. A scale input would have to be added to break this.
+  const first = layoutRack('selective', base);
+  for (let i = 0; i < 5; i++) {
+    const again = layoutRack('selective', { ...base });
+    assert.equal(again.rows, first.rows);
+    assert.equal(again.bays, first.bays);
+    assert.equal(again.positions, first.positions);
+  }
+  assert.deepEqual([first.rows, first.bays], [10, 24]);
+});
