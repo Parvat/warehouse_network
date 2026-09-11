@@ -9,11 +9,17 @@
    Oswald, the geometry and the palette are exactly as drawn. */
 
 .a3{font-family:var(--ff-body);font-size:15px;line-height:1.55;color:var(--ink)}
-.a3 .wrap{max-width:1280px;margin:0 auto;padding:0 24px}
+.a3 .wrap{max-width:1520px;margin:0 auto;padding:0 16px}
 .a3 h1,.a3 h2,.a3 h3{font-family:'Oswald',sans-serif;font-weight:700;line-height:.98;text-transform:uppercase}
 .a3 .mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
 .a3{--zinc:#F4F3EE;--zinc-2:#EAE8E1;--paper:#FFFFFF;--pine:#14392B;--pine-2:#1D5340;--mint:#E8EFEA;
 --ink:#1A1D1B;--ink-2:#3E453F;--steel:#6B726C;--blue:#1B4FD8;--yellow:#F2C230;--flag:#A8341C;--line:#DAD7CE}
+/* The face for anything holding a value you typed or picked: the CSS generic
+   `monospace`, deliberately, not the app's --ff-mono. That token resolves to
+   JetBrains Mono, which is the sheet's face for *figures* — dimensions on the
+   drawings, the run summary, the placard. A field is a different thing from a
+   figure, and it reads as one in the reader's own fixed-width font. */
+.a3{--ff-field:monospace}
 .a3 .tbar{border-bottom:2px solid var(--ink);background:var(--zinc);position:sticky;top:0;z-index:30}
 .a3 .tbar .wrap{display:grid;grid-template-columns:auto 1fr auto auto auto;height:60px}
 .a3 .tcell{display:flex;flex-direction:column;justify-content:center;padding:0 20px;border-right:1px solid var(--line)}
@@ -31,32 +37,79 @@
 .a3 .rulerow .ln{flex:1;height:1px;background:var(--line)}
 .a3 .rulerow span{font-family:'JetBrains Mono';font-size:10px;letter-spacing:.2em;text-transform:uppercase}
 .a3 .sheet{border:2px solid var(--ink);background:var(--paper)}
-.a3 .band{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr) minmax(0,1fr)}
-.a3 .band.top{border-bottom:2px solid var(--ink)}
-.a3 .band.bot{border-top:2px solid var(--ink)}
-.a3 .grp{border-right:1px solid var(--line);display:flex;flex-direction:column}
-.a3 .grp:last-child{border-right:0}
+/* ── the deck: the schedule beside the drawing it changes ─────────────── */
+/* A fixed left column and the rest to the drawing. The panel is fixed because
+   it holds controls, which have a width they want and no use for more; the
+   drawing takes everything else, because a plan is only as readable as it is
+   large. */
+.a3 .deck{display:grid;grid-template-columns:296px minmax(0,1fr);gap:14px;padding:14px;
+  align-items:stretch}
+/* The panel is lifted out of the flow so a long schedule scrolls inside itself
+   rather than making the row taller than the drawing beside it — the same trick
+   the flag column uses, and the reason both columns end on one line. */
+.a3 .panel{position:relative;min-height:340px}
+.a3 .panelinner{position:absolute;inset:0;display:flex;flex-direction:column;
+  overflow-y:auto;overflow-x:hidden;border:1px solid var(--ink);background:var(--paper);
+  scrollbar-width:thin}
+/* One panel, three groups, a hairline between them — not three cards. */
+.a3 .pgrp{padding:0 12px 10px;border-bottom:1px solid var(--line)}
+.a3 .pgrp:last-child{border-bottom:0}
+/* The heading is the control that folds the group, so it behaves like one:
+   full width, a pointer, and a target the whole strip wide rather than a
+   chevron somebody has to aim at. */
+.a3 .pgrp .grptitle{display:flex;width:100%;padding:8px 0 2px;gap:6px;
+  background:none;border:0;text-align:left;cursor:pointer;color:inherit}
+.a3 .pgrp .grptitle:hover h3{color:var(--pine)}
+.a3 .pgrp .grptitle:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
+/* The chevron is pushed to the far edge and turns to say which way the group
+   will go — down when it is open, right when it is folded away. */
+.a3 .pgrp .grptitle .tog{margin-left:auto;display:flex;align-items:center;
+  width:auto;height:auto;border:0;background:none;padding:0;flex-shrink:0;
+  color:var(--steel);transition:transform .12s ease}
+.a3 .pgrp .grptitle[aria-expanded="false"] .tog{transform:rotate(-90deg)}
+/* Folded, the group is a heading and nothing else: the padding that sat under
+   its fields would otherwise leave a gap under the title. */
+.a3 .pgrp.shut{padding-bottom:0}
+.a3 .pgrp.shut .grptitle{padding-bottom:8px}
+.a3 .pgrp .subhead{padding:7px 0 0;border-top:0;margin-top:3px}
+/* Rows of equal cells. Nothing in the panel carries a width of its own: a
+   control fills the cell it is given, so a row of four and a row of three both
+   come out even and the panel has one left edge and one right edge. */
+.a3 .row{display:grid;gap:7px;margin-top:7px}
+.a3 .row.r1{grid-template-columns:minmax(0,1fr)}
+.a3 .row.r2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.a3 .row.r3{grid-template-columns:repeat(3,minmax(0,1fr))}
+.a3 .row.r4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.a3 .row>.f{width:auto;min-width:0}
+.a3 .row .segs{width:100%}
+.a3 .row .segs button{flex:1 1 0;min-width:0;padding:0 4px;overflow:hidden}
 .a3 .grptitle{display:flex;align-items:baseline;gap:7px;padding:10px 14px 5px;flex-wrap:wrap}
 .a3 .grptitle .no{font-family:'JetBrains Mono';font-size:10px;color:var(--blue);letter-spacing:.14em}
 .a3 .grptitle h3{font-size:13px;letter-spacing:.03em}
 .a3 .grptitle .note{font-size:11px;color:var(--steel);letter-spacing:0;text-transform:none;font-family:var(--ff-body)}
-.a3 .fields{display:flex;flex-wrap:nowrap;gap:7px;padding:0 14px 12px;align-items:flex-end}
 .a3 /* fields share their group's width but never squeeze below their content */
 .f{display:flex;flex-direction:column;gap:3px;flex:1 1 auto;min-width:52px}
 .a3 .f.w4{min-width:62px}
 .a3 .f.wcombo{min-width:70px}
 .a3 .f.w{flex:0 0 auto;min-width:0}
-.a3 .f label{font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--steel);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Labels stay in the sheet's own JetBrains Mono, as the rest of the sheet's
+   small caps do. The boxes under them are --ff-field instead, so the two are
+   told apart by the face rather than by position alone. */
+.a3 .f label{font-family:var(--ff-mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--steel);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .a3 .f input::-webkit-outer-spin-button,.a3 .f input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .a3 .f input[type=number]{-moz-appearance:textfield;appearance:textfield}
 .a3 .f select{cursor:pointer}
-.a3 .f input,.a3 .f select{width:100%;height:29px;padding:0 6px;border:1px solid var(--line);background:var(--zinc-2);border-radius:2px;font-family:'JetBrains Mono';font-size:12.5px;color:var(--ink);text-align:center}
+/* The option list a select drops needs telling too: Chrome renders the popup in
+   the system UI face whatever the select itself says, so the closed box and the
+   open list came out in two different faces. */
+.a3 .f input,.a3 .f select{width:100%;height:26px;padding:0 6px;border:1px solid var(--line);background:var(--zinc-2);border-radius:2px;font-family:var(--ff-field);font-size:12.5px;color:var(--ink);text-align:center}
 .a3 .f select{text-align:left;padding-right:2px}
+.a3 .f select option{font-family:var(--ff-field);font-size:12.5px}
 .a3 .f input:focus,.a3 .f select:focus{outline:2px solid var(--blue);background:#fff}
 .a3 .f[hidden]{display:none}
 .a3 .f.hot label{color:var(--blue)}
 .a3 .segs{display:flex}
-.a3 .segs button{border:1px solid var(--line);border-right:0;background:var(--zinc-2);padding:0 7px;height:29px;cursor:pointer;font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
+.a3 .segs button{border:1px solid var(--line);border-right:0;background:var(--zinc-2);padding:0 9px;height:26px;cursor:pointer;font-family:var(--ff-field);font-size:10px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
 .a3 .segs button:last-child{border-right:1px solid var(--line)}
 .a3 .segs button[aria-pressed="true"]{background:var(--pine);color:#fff;border-color:var(--pine)}
 .a3 .derive{margin:0 16px 14px;padding:8px 11px;background:var(--zinc-2);border-left:3px solid var(--blue);font-size:12.5px;color:var(--ink-2)}
@@ -79,7 +132,7 @@
   color:var(--pine);line-height:1.8}
 .a3 .runsummary b{font-weight:700;color:var(--pine-2)}
 .a3 .runsummary i{font-style:normal;color:var(--pine);opacity:.45;margin:0 .45em}
-.a3 .stage{padding:16px 16px 12px;background:linear-gradient(var(--zinc-2) 1px,transparent 1px) 0 0/100% 24px,linear-gradient(90deg,var(--zinc-2) 1px,transparent 1px) 0 0/24px 100%,var(--paper)}
+.a3 .stage{padding:12px;border:1px solid var(--line);background:linear-gradient(var(--zinc-2) 1px,transparent 1px) 0 0/100% 24px,linear-gradient(90deg,var(--zinc-2) 1px,transparent 1px) 0 0/24px 100%,var(--paper)}
 .a3 .figs{display:flex;gap:24px;align-items:stretch;justify-content:center;flex-wrap:nowrap}
 .a3 .figbox{display:flex;flex-direction:column;min-width:0;position:relative}
 .a3 .dealer{padding:22px 18px;text-align:center}
@@ -107,14 +160,14 @@
 .a3 .cbox input{padding-right:15px;text-align:center}
 .a3 .figctl{justify-content:center}
 .a3 .cbox{position:relative;display:flex}
-.a3 .cbtn{position:absolute;right:0;top:0;height:29px;width:14px;border:0;background:transparent;
+.a3 .cbtn{position:absolute;right:0;top:0;height:26px;width:14px;border:0;background:transparent;
   color:var(--steel);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0}
 .a3 .cbtn:hover{color:var(--pine)}
 .a3 .copts{position:absolute;top:calc(100% + 2px);left:0;right:0;z-index:30;margin:0;padding:3px;list-style:none;
   background:var(--paper);border:1px solid var(--line);border-radius:2px;box-shadow:0 6px 16px rgba(26,29,27,.13);
   max-height:186px;overflow:auto}
 .a3 .copts[hidden]{display:none}
-.a3 .copts li{font-family:'JetBrains Mono';font-size:11.5px;color:var(--ink-2);padding:4px 7px;cursor:pointer;border-radius:2px}
+.a3 .copts li{font-family:var(--ff-field);font-size:11.5px;color:var(--ink-2);padding:4px 7px;cursor:pointer;border-radius:2px}
 .a3 .copts li:hover{background:var(--mint);color:var(--pine)}
 .a3 .copts li[aria-selected="true"]{background:var(--pine);color:#fff}
 .a3 .figctl .f label{font-size:8.5px;letter-spacing:.09em}
@@ -205,21 +258,24 @@
 .a3 .ruled h4{font-family:'JetBrains Mono';font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--steel);margin-bottom:8px}
 .a3 .ruled li{list-style:none;font-size:13px;color:var(--ink-2);padding:4px 0 4px 18px;position:relative}
 .a3 .ruled li:before{content:'╳';position:absolute;left:0;color:var(--flag);font-size:10px;top:7px}
-@media (max-width:1100px){
-  .a3 .band{grid-template-columns:repeat(2,minmax(0,1fr))}
-}
-@media (max-width:1150px){
-  .a3 .band{grid-template-columns:repeat(2,minmax(0,1fr))}
+/* Below this the drawing has too little left to be worth reading beside the
+   panel, so the panel goes back above it and returns to the flow — nothing to
+   match heights with once they are stacked. */
+@media (max-width:1120px){
+  .a3 .deck{grid-template-columns:minmax(0,1fr);gap:0;padding:0}
+  .a3 .panel{position:static;min-height:0}
+  .a3 .panelinner{position:static;overflow:visible;border:0;
+    border-bottom:2px solid var(--ink)}
+  .a3 .pgrp{padding:0 14px 12px}
+  .a3 .row>.f{max-width:260px}
 }
 @media (max-width:900px){
-  .a3 .summary,.a3 .band{grid-template-columns:1fr}
-  .a3 .grp{border-right:0;border-bottom:1px solid var(--line)}
+  .a3 .summary{grid-template-columns:1fr}
 }
 @media (max-width:760px){
   .a3 .figs{flex-direction:column;align-items:stretch}
 
   .a3 .sched{grid-template-columns:1fr}
-  .a3 .grp{border-right:0}
   .a3 .ocar .o{flex:0 0 84%}
   .a3 .tbar .wrap{grid-template-columns:auto 1fr auto}
   .a3 .tcell.hide-sm{display:none}
@@ -274,7 +330,7 @@
 }
 .a3 .emptyflags{font-size:12.5px;color:var(--steel);line-height:1.5}
 /* The segmented controls label with a span — see the note in Planner.tsx. */
-.a3 .f .lbl{font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;
+.a3 .f .lbl{font-family:var(--ff-mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;
   color:var(--steel);white-space:nowrap}
 /* the app's site-header logo adds a notch pseudo-element; the sheet mark has none */
 .a3 .logo b:after{content:none}
@@ -284,19 +340,6 @@
    two take their content and the third takes the rest. Fractional columns left
    group 01 too narrow for four fixed-width controls and wrapped its sprinklers
    onto a second row. */
-.a3 .band{grid-template-columns:auto auto auto}
-.a3 .fields{flex-wrap:wrap;row-gap:9px}
-/* Fields are sized by their content, never by the space left in the group.
-   Letting them flex made the same kind of value render at different widths in
-   each group — a one-digit ARM LEVELS twice the width of CLEAR HT — which is
-   what made the band read as unconsidered. Spare width now goes to the group's
-   right edge instead, and equivalent fields line up across all three groups. */
-.a3 .fields>.f{flex:0 0 auto;min-width:0;width:84px}
-.a3 .fields>.f.w2{width:64px}          /* one or two digits: levels, deep, flue */
-.a3 .fields>.f.w4{width:84px}          /* three or four: lengths, heights, aisle */
-.a3 .fields>.f.wcombo{width:104px}     /* a select carries its unit as well */
-.a3 .fields>.f.w5{width:142px}         /* an assumption states itself and offers a change */
-.a3 .fields>.f.w{width:auto}           /* segmented controls size to content */
 
 /* The comparison row is the type control, so it is headed and reads as one. */
 .a3 .typehead{font-family:'JetBrains Mono';font-size:10px;letter-spacing:.14em;text-transform:uppercase;
@@ -307,9 +350,9 @@
 .a3 .tcellopt[aria-pressed="true"]{background:var(--mint);border-top-color:var(--pine)}
 .a3 .tcellopt:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
 /* A derived figure: same box as an input, visibly not one. */
-.a3 .f .ro{display:flex;align-items:center;justify-content:center;width:100%;height:29px;
+.a3 .f .ro{display:flex;align-items:center;justify-content:center;width:100%;height:26px;
   padding:0 6px;border:1px dashed var(--line);background:transparent;border-radius:2px;
-  font-family:'JetBrains Mono';font-size:12.5px;color:var(--steel)}
+  font-family:var(--ff-field);font-size:12.5px;color:var(--steel)}
 
 /* ── mixed floors ─────────────────────────────────────────────────────── */
 /* Two families, two elevations: side by side and captioned, because one
@@ -340,17 +383,24 @@
 /* A range the field ought to sit in, shown rather than enforced. */
 .a3 .f .hint{font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:.04em;color:var(--steel);
   margin-top:2px;white-space:nowrap}
-.a3 .fields>.f.hashint{align-self:flex-start}
+.a3 .row>.f.hashint{align-self:flex-start}
 /* What the columns did to this layout, and everything else Trace decided. */
 .a3 .colnote{margin:10px 0 0;padding:9px 12px;background:var(--zinc-2);
   border-left:3px solid var(--blue);font-size:12.5px;line-height:1.5;color:var(--ink-2)}
+/* A column standing in an aisle: the drawing marks where, this says what it
+   means. Red and first in the column, because it is the one thing on the sheet
+   a reader must not skim past — and it is not a flag card, because it is not
+   a check on the racking, it is a fact about the building. */
+.a3 .aislewarn{margin:10px 0 0;padding:9px 12px;background:#F5E7E3;
+  border-left:3px solid var(--flag);font-size:12.5px;line-height:1.5;color:#6B2413}
+.a3 .aislewarn b{font-weight:600;color:var(--flag)}
 .a3 .assumed{margin:8px 0 0;padding:9px 12px;background:var(--paper);border:1px solid var(--line);
   font-size:12px;line-height:1.55;color:var(--ink-2)}
 .a3 .assumed b{color:var(--ink);font-weight:600}
 
 /* 03 carries two families' settings; a heading each keeps them apart without
    a second panel. */
-.a3 .subhead{font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:.14em;
+.a3 .subhead{font-family:var(--ff-mono);font-size:9.5px;letter-spacing:.14em;
   text-transform:uppercase;color:var(--steel);padding:2px 14px 5px;
   border-top:1px solid var(--line);margin-top:2px}
 /* Advice, not an option: Trace does not offer a tunnel, but a dealer may. */
@@ -395,34 +445,34 @@
 .a3 .figsum{position:absolute;left:0;right:0;bottom:0;margin:0}
 .a3 .figstats{margin:0}
 .a3 .summary .flags>*+*{margin-top:8px}
-.a3 .flags .colnote,.a3 .flags .advice,.a3 .flags .assumed,.a3 .flags .stripcost{margin-top:0}
+.a3 .flags .colnote,.a3 .flags .advice,.a3 .flags .assumed,.a3 .flags .stripcost,
+.a3 .flags .aislewarn{margin-top:0}
 
 /* ── a figure Trace worked out, and the means to disagree ─────────────── */
 
-/* Wider than a plain field: it carries a stepper and a marker, and both have
-   to sit on one line or the row's baseline breaks. */
-.a3 .fields>.f.stepfield{width:126px}
-.a3 .stepfield .step{display:flex;align-items:stretch;height:29px;
+/* The same height and the same baseline as every other control in the row: the
+   marker sits beside the label, so nothing hangs below the box. It takes the
+   width of its cell, as the inputs do. */
+.a3 .stepfield .steplbl{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
+.a3 .stepfield .steplbl label{min-width:0;flex:0 1 auto}
+.a3 .stepfield .step{display:flex;align-items:stretch;height:26px;
   border:1px solid var(--line);border-radius:2px;background:var(--paper)}
-.a3 .stepfield .step button{width:26px;flex:0 0 auto;border:0;background:transparent;
+.a3 .stepfield .step button{width:24px;flex:0 0 auto;border:0;background:transparent;
   cursor:pointer;color:var(--ink-2);font-family:var(--ff-body);font-size:15px;line-height:1;
   padding:0}
 .a3 .stepfield .step button:hover:not(:disabled){background:var(--zinc-2);color:var(--ink)}
 .a3 .stepfield .step button:disabled{color:var(--line);cursor:default}
 .a3 .stepfield .step output{flex:1 1 auto;display:flex;align-items:center;justify-content:center;
-  font-family:'JetBrains Mono';font-size:12.5px;color:var(--ink);
+  font-family:var(--ff-field);font-size:12.5px;color:var(--ink);
   border-left:1px solid var(--line);border-right:1px solid var(--line)}
-/* The marker sits under the figure and reserves its own line either way, so
-   overriding one does not shuffle the row it is in. */
-.a3 .stepfield .auto,.a3 .stepfield .reauto{display:block;margin-top:3px;height:11px;
-  font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--steel);text-align:center;line-height:11px}
-.a3 .stepfield .reauto{border:0;background:transparent;padding:0;width:100%;cursor:pointer;
+/* Whose figure this is, said on the label's line. Both states are the same
+   size, so overriding one does not shuffle the row it is in. */
+.a3 .stepfield .auto,.a3 .stepfield .reauto{flex:0 0 auto;
+  font-family:var(--ff-mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--steel);line-height:1;white-space:nowrap}
+.a3 .stepfield .reauto{border:0;background:transparent;padding:0;cursor:pointer;
   color:var(--blue);text-decoration:underline;text-underline-offset:2px}
 
-/* The reasoning behind a figure, where the figure alone would be an assertion. */
-.a3 .fieldnote{margin:-4px 16px 12px;font-size:11.5px;line-height:1.5;color:var(--steel);
-  max-width:72ch}
 
 /* A paired elevation carries a caption the single one does not, and a caption
    that adds to the row makes the mixed view taller than the other two. It comes
@@ -450,7 +500,7 @@
 .a3 .figs{display:flex;gap:24px;align-items:flex-start;justify-content:center;
   flex-wrap:nowrap}
 .a3 .figbox{display:flex;flex-direction:column;position:relative;
-  flex:var(--aspect,1) 1 0;min-width:0}
+  flex:var(--aspect,1) 1 0;min-width:0;container-type:inline-size}
 .a3 .figbox svg{display:block;width:100%;height:auto;margin-top:auto}
 
 /* The plan is wrapped, so the expand control has a stable box around the
@@ -482,8 +532,42 @@
    37px and past the figure's edge as the caption changed with the view. The
    text may wrap and give ground; the control may not, because a control that
    moves when the caption does is a control the reader has to hunt for. */
+/* An elevation's head is only as wide as the drawing, about 210px, and three
+   columns there left each of them 40-80px — so the caption wrapped to a third
+   line and lost it to the head's fixed height, the summary lost half of
+   itself, and the control slid past the figure's edge as the caption changed
+   with the view.
+
+   Two lines is the right shape for that width, not three columns. The caption
+   takes the first with the control beside it; the summary takes the second
+   across the full width. Same 31px, so figures still keep a shared baseline,
+   and nothing is cut. */
 .a3 .fighead .t{flex:1 1 auto;min-width:0}
 .a3 .fighead .r{flex:0 1 auto;min-width:0}
+.a3 .figbox.el .fighead{display:grid;gap:0 10px;align-items:start;
+  grid-template-columns:1fr auto}
+.a3 .figbox.el .fighead .t{grid-area:1/1;min-width:0}
+.a3 .figbox.el .fighead .figview{grid-area:1/2}
+.a3 .figbox.el .fighead .r{grid-area:2/1/2/-1;min-width:0}
+/* Two tiers of the same rule, sized to the longest summary each kind of head
+   can actually carry. A head with the view control (selective, double-deep)
+   only ever says "N pallets / bay", 134px worst case, so it clears a 195px
+   box once the 60px control column is spoken for. A head without one carries
+   a lane's summary, up to "1 pallet / lane · 30 deep" at pallet flow's max
+   depth — 224px — or a cantilever's "N arm levels + base"; 230px covers that
+   with a margin. Below either, the summary goes rather than wraps: it repeats
+   figures the placard already carries, where the caption is the only thing
+   that says which drawing this is. */
+@container (max-width: 195px) {
+  .a3 .figbox.el:has(.figview) .fighead .r{display:none}
+  .a3 .figbox.el:has(.figview) .fighead .t{grid-area:1/1/3/2}
+}
+@container (max-width: 230px) {
+  .a3 .figbox.el .fighead .r{display:none}
+  .a3 .figbox.el .fighead .t{grid-area:1/1/3/2}
+}
+
+/* A control that moves when the caption does is one the reader has to hunt for. */
 .a3 .figview{flex:0 0 auto}
 
 /* Fig. 1's key, in the slot the building's size used to have. It was drawn
@@ -511,9 +595,12 @@
 .a3 .figsize{position:absolute;left:0;right:0;top:0;margin:0;text-align:center;
   font-family:'JetBrains Mono';font-size:10px;letter-spacing:.14em;
   text-transform:uppercase;color:var(--steel);pointer-events:none}
-.a3 .figbox.el .fighead{gap:10px}
+/* gap already set above, on the grid rule */
 
-.a3 .figview{margin-left:auto;padding:0 7px;height:17px;cursor:pointer;white-space:nowrap;
+/* 15px, not 17: it shares the caption's line in an elevation head, and a
+   taller control pushed that two-line head to 32.5px and clipped the summary
+   under it. The label is 8.5px, so it has the room. */
+.a3 .figview{margin-left:auto;padding:0 7px;height:15px;cursor:pointer;white-space:nowrap;
   border:1px solid var(--line);background:var(--paper);color:var(--blue);border-radius:2px;
   font-family:'JetBrains Mono';font-size:8.5px;letter-spacing:.08em;text-transform:uppercase}
 .a3 .figview:hover{border-color:var(--blue)}

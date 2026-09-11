@@ -261,6 +261,18 @@ export const elBox = (
 export const FIG_TEXT = { anno: 10, tiny: 10, dim: 10 } as const;
 
 /**
+ * How much larger the building's own overall dimension reads than everything
+ * else on the sheet.
+ *
+ * Every other callout is one size — see `FIG_TEXT` above — because they are
+ * all read the same way. The building's own length and width are not another
+ * callout: they are the headline figure the whole plan sizes itself to, and a
+ * drawing where that number reads the same size as an aisle width buries it
+ * in the detail it should stand above.
+ */
+export const BUILDING_DIM_SCALE = 1.3;
+
+/**
  * The ways a figure can be constrained beyond its own contents.
  *
  * An object rather than a tail of positional arguments: there are six of them,
@@ -423,4 +435,166 @@ export function floorFraction(font: number): number {
 /** Pixels per inch, from the clear height alone, so both elevations agree. */
 export function elevationPpi(clearHeightFt: number): number {
   return (EL_FRAME.FL - EL_FRAME.topPad) / Math.max(1, clearHeightFt * 12);
+}
+
+/* ── one rule for a label that names a row from outside the building ────── */
+
+/**
+ * An aisle width, past the building rather than inside the gap — the fallback
+ * `insideAisleLabel` reaches for once `aisleLabelFits` says the gap has no
+ * room left for it on screen. Never inside the building, never over the
+ * racking, on the axis the rows stack on: the right margin when that axis
+ * runs left to right, the margin past the *top* wall once the racking has
+ * turned to run down the page.
+ *
+ * A cantilever row's own "2 sides" used to be called out from here too. It
+ * is gone rather than moved: which rows are armed from both sides is already
+ * on the placard ("Sides armed"), and a run of many interior rows put one
+ * of these in the margin for every row it drew — the same cost paid once per
+ * aisle below, now paid once per row, on a strip long enough to still change
+ * the sheet's scale between orientations even after aisle labels moved
+ * inside. There is no equivalent "inside" for a row's own label the way an
+ * aisle has a gap to sit in, so it had nowhere left to go.
+ *
+ * Top, not bottom, for what does still land here — this was tried below the
+ * building first, and it silently scaled the whole sheet. Fig. 1 and Fig. 2
+ * share a row whose width each gets in proportion to its own aspect ratio,
+ * and Fig. 1's aspect is locked to Fig. 2's floor line, which `floorAt` holds
+ * at floorFraction() of the frame — about 92% of it, because a section has so
+ * little to say below its floor. Content added *below* the plan's floor has
+ * to be matched by growing the room *above* it by roughly
+ * floorFraction / (1 - floorFraction) to hold that 92:8 split — about 12
+ * units for every 1 added below. A row of labels only needed about 30 units
+ * below the wall, and that alone bloated the plan's fitted box by twelve
+ * times as much again, on one orientation and not the other — which is what
+ * made every figure on the sheet visibly larger the moment the racking was
+ * turned to run down the page. Above the floor that same content only has to
+ * be matched in the other direction, at roughly 1:1, so it costs the frame
+ * what it actually is and no more.
+ *
+ * The label reads along the row it names either way: normal text in the right
+ * margin, rotated so the running direction still matches once the racking
+ * has turned with the orientation.
+ */
+export function outsideRowLabel(ext: Extent, a: {
+  vertical: boolean;
+  /** The building's screen box, in the same units as `acrossPx`. */
+  px: number; py: number; w: number; h: number;
+  /** The row's own position on the axis rows stack on, in screen units from
+   *  the same origin as `px`/`py` — already multiplied by scale. */
+  acrossPx: number;
+  text: string;
+  size: number;
+  fill: string;
+}): { x?: number; y?: number; transform?: string; textAnchor?: 'start' | 'middle' | 'end' } {
+  if (a.vertical) {
+    // Above, clear of the building-length dimension and its (deliberately
+    // larger — see BUILDING_DIM_SCALE) label, which together reach to about
+    // `py - 34`, and this label's own rotated half-length reaching up from
+    // its anchor besides. Kept to the minimum that clears them: every unit
+    // added here is a unit the whole sheet grows by relative to the other
+    // orientation (see the note above), so generous padding here is not free.
+    const w = a.text.length * MONO.advance * a.size;
+    const y = a.py - 34 - 3 - w / 2;
+    ext.text({ x: a.px + a.acrossPx, y, size: a.size, text: a.text, anchor: 'middle', rotate: -90 });
+    return {
+      transform: `translate(${(a.px + a.acrossPx).toFixed(1)} ${y.toFixed(1)}) rotate(-90)`,
+      textAnchor: 'middle',
+    };
+  }
+  const x = a.px + a.w + 6, y = a.py + a.acrossPx + 3;
+  ext.text({ x, y, size: a.size, text: a.text });
+  return { x, y };
+}
+
+/**
+ * An aisle width, read inside the gap it dimensions rather than past the
+ * building — the position is the caller's (each plan already has its own
+ * along/across mapping to place it with), this standardises only how it
+ * reads once placed: centred on the point given, rotated to keep reading
+ * along the aisle once the racking turns to run down the page.
+ *
+ * Outside the wall was tried first. It works for one orientation only: the
+ * building never rotates, so a label added past the wall on the axis rows
+ * stack on costs that plan real height in one orientation and real width in
+ * the other — never the same amount, on a building that is not square, and
+ * Fig. 1 and Fig. 2 share a row whose split follows Fig. 1's own aspect. So
+ * turning the racking changed how much of the row Fig. 2 got, which read as
+ * the whole sheet being redrawn at another size rather than turned on the
+ * spot. Inside the gap costs nothing outside what the building already
+ * occupies, in either orientation, which is what actually holds the two
+ * figures to one scale.
+ */
+export function insideAisleLabel(ext: Extent, a: {
+  vertical: boolean;
+  /** Where the label centres, in the same screen units the caller draws in. */
+  x: number; y: number;
+  text: string;
+  size: number;
+}): { x?: number; y?: number; transform?: string; textAnchor: 'middle' } {
+  if (a.vertical) {
+    ext.text({ x: a.x, y: a.y, size: a.size, text: a.text, anchor: 'middle', rotate: -90 });
+    return {
+      transform: `translate(${a.x.toFixed(1)} ${a.y.toFixed(1)}) rotate(-90)`,
+      textAnchor: 'middle',
+    };
+  }
+  ext.text({ x: a.x, y: a.y, size: a.size, text: a.text, anchor: 'middle' });
+  return { x: a.x, y: a.y, textAnchor: 'middle' };
+}
+
+/**
+ * Whether an aisle this wide on screen actually has room for its own label.
+ *
+ * A very large building can shrink the same aisle width to a few pixels on
+ * screen, and a label does not get smaller with it — every callout on the
+ * sheet is one size (see `FIG_TEXT`). Rotated or not, the label's own text
+ * length always ends up running *along* the row it names, where there is
+ * always room — that is the length of the whole rackable floor. What has to
+ * fit *across*, into the aisle gap itself, is only ever one line's thickness:
+ * ascent plus descent, the short axis whichever way the text is turned.
+ * Below that, `insideAisleLabel` would not sit in the gap so much as print
+ * over the row on either side of it, which is worse than the scale cost of
+ * falling back to the margin for this one label — see `outsideRowLabel`.
+ */
+export function aisleLabelFits(a: { aisleFt: number; sc: number; size: number }): boolean {
+  const need = a.size * (MONO.ascent + MONO.descent) + 4;
+  return a.aisleFt * a.sc >= need;
+}
+
+/**
+ * Where a cross aisle actually sits, once the floor either side of it is
+ * accounted for.
+ *
+ * The solver places it flush against the segment that follows: `atFt` is
+ * where that segment's own arithmetic starts counting from, and nothing
+ * before it matters to that arithmetic. But a segment rarely divides evenly
+ * into whole modules, so the last one before the gap often falls short of its
+ * nominal edge — and flush against one true rack face, short of the other, is
+ * not centred in the gap a reader can actually see.
+ *
+ * The aisle keeps its true, engineered width — this changes nothing a
+ * customer is quoted — it is only recentred in whatever floor is actually
+ * free between the two real rack faces either side of it. Which faces those
+ * are is the caller's to say: a plan with one zone passes its own bay ends and
+ * starts, and a mixed floor passes both zones' — a cantilever run and a
+ * pallet bay do not divide a segment the same way, so the nearer real face on
+ * each side can come from either one.
+ */
+export function centeredCrossAisleFt(a: {
+  atFt: number;
+  widthFt: number;
+  /** Where a real rack face ends, for every module that could be the one
+   *  immediately before this gap. */
+  endsBeforeFt: readonly number[];
+  /** Where a real rack face starts, for every module that could be the one
+   *  immediately after this gap. */
+  startsAfterFt: readonly number[];
+}): number {
+  const before = a.endsBeforeFt.filter((e) => e <= a.atFt + 0.02);
+  const after = a.startsAfterFt.filter((s) => s >= a.atFt + a.widthFt - 0.02);
+  if (before.length === 0 || after.length === 0) return a.atFt;
+  const rackEndA = Math.max(...before);
+  const rackStartB = Math.min(...after);
+  return (rackEndA + rackStartB) / 2 - a.widthFt / 2;
 }

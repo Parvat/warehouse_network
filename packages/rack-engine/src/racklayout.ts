@@ -1,7 +1,7 @@
 import {
   AVAILABLE_THREE_QUARTERS, BUILDING_COLUMN_IN, COLUMN_FACE_ZONE_FT, COLUMN_PENALTY,
   COLUMN_WIDTH_IN, CROSS_AISLE_WIDTH_FT, crossAislesFor,
-  BUILDING_FT, CROSS_AISLE_SEGMENT_FT, LANE_CLEARANCE_IN, DOCK_APRON_FT, FLUE_IN, GRID_SEARCH_STEP_FT,
+  BUILDING_ZONE_ADVICE_FT, CROSS_AISLE_SEGMENT_FT, LANE_CLEARANCE_IN, DOCK_APRON_FT, FLUE_IN, GRID_SEARCH_STEP_FT,
   type ColumnWhere,
 } from './constants.js';
 import { crossAisleSpans, fillSegments } from './crossaisles.js';
@@ -148,6 +148,16 @@ export interface RackLayout {
   columnsAbsorbed: number;
   /** Bays a column landed in and killed. */
   baysLostToColumns: number;
+  /**
+   * The rack footprints across the building, in envelope feet from the wall
+   * line, and the flues between the back-to-back pairs. A floor that mixes
+   * two families has to judge a column against both zones at once, and it
+   * cannot do that from a count — see `classifyColumn`.
+   */
+  bandsFt: readonly { start: number; depth: number }[];
+  fluesFt: readonly { start: number; depth: number }[];
+  /** The forklift aisles between them, in the same feet. */
+  aislesFt: readonly { start: number; depth: number }[];
   /** Columns the search could not clear, by where they ended up. */
   columnsInAisles: number;
   columnsOnFaces: number;
@@ -255,21 +265,55 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
   const columnsRaw = grid ? gridColumns(input, grid) : [];
   const pitchFt = R.pick === 'aisle' ? deep * fd * 2 + flue + aisle : deep * fd + aisle;
 
+  /*
+   * A column's envelope coordinates do not move when the racking does — the
+   * building is what it is, and the offsets slide the rows, not the columns.
+   * So they are worked out once here rather than once per column per trial,
+   * which is a few hundred times over.
+   */
+  const columnsEnv = columnsRaw.map((c) => toEnvelope(c, {
+    orientation: input.orientation, wallClearanceFt: input.wallClearanceFt,
+  }, false));
+
+  /*
+   * The columns are a grid, so there are far fewer positions than columns: a
+   * 250 × 250 grid is 62,500 columns standing on 250 distinct feet along and
+   * 250 across. Each axis is judged once per distinct position and the two
+   * are combined per column, so the work per trial stops growing with the
+   * area of the building and grows with its side instead.
+   */
+  const alongVals: number[] = [], acrossVals: number[] = [];
+  const alongOf = new Map<number, number>(), acrossOf = new Map<number, number>();
+  const colAlong = new Int32Array(columnsEnv.length);
+  const colAcross = new Int32Array(columnsEnv.length);
+  columnsEnv.forEach((c, i) => {
+    let a = alongOf.get(c.along);
+    if (a === undefined) { a = alongVals.push(c.along) - 1; alongOf.set(c.along, a); }
+    let x = acrossOf.get(c.across);
+    if (x === undefined) { x = acrossVals.push(c.across) - 1; acrossOf.set(c.across, x); }
+    colAlong[i] = a; colAcross[i] = x;
+  });
+
   let best = trial(0, 0);
   if (columnsRaw.length > 0) {
+    // Scored, not built. Every trial but the winning one is thrown away, so
+    // the search asks only for the number it compares and the full layout is
+    // assembled once, at the end, for the offsets that won.
+    let bestScore = score(0, 0), bestAl = 0, bestAc = 0;
     for (let ac = 0; ac < pitchFt - 1e-9; ac += GRID_SEARCH_STEP_FT) {
       for (let al = 0; al < bayLengthFt - 1e-9; al += GRID_SEARCH_STEP_FT) {
-        const t = trial(+al.toFixed(3), +ac.toFixed(3));
+        const alongOffsetFt = +al.toFixed(3), acrossOffsetFt = +ac.toFixed(3);
+        const sc = score(alongOffsetFt, acrossOffsetFt);
         // Bays kept, less what the columns cost where they landed — so an
         // offset that clears an aisle is worth losing several bays for, and one
         // that drops a whole row is not worth clearing one column.
-        if (t.score > best.score
-          || (t.score === best.score
-            && t.alongOffsetFt + t.acrossOffsetFt < best.alongOffsetFt + best.acrossOffsetFt)) {
-          best = t;
+        if (sc > bestScore
+          || (sc === bestScore && alongOffsetFt + acrossOffsetFt < bestAl + bestAc)) {
+          bestScore = sc; bestAl = alongOffsetFt; bestAc = acrossOffsetFt;
         }
       }
     }
+    if (bestAl !== 0 || bestAc !== 0) best = trial(bestAl, bestAc);
   }
 
   // A lane holds one pallet across; a bay holds what the beam carries, and an
@@ -309,6 +353,7 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
     columnsOnFaces: best.columns.filter((c) => c.where === 'face').length,
     columnPenalty: best.penalty,
     baysLostToColumns: best.baysLost,
+    bandsFt: best.bands, fluesFt: best.flues, aislesFt: best.aisles,
     crossAisles, crossAisleWidthFt: CROSS_AISLE_WIDTH_FT,
     crossAisleAtFt: best.crossAisleAtFt, bayStartsFt: best.bayStartsFt,
     baysLostToCrossAisles: Math.max(0,
@@ -317,14 +362,48 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
   };
 
   /** One candidate placement, scored by the bays it ends up with. */
+  /**
+   * What one offset is worth, without building anything it does not need.
+   *
+   * The same arithmetic `trial` does — the same stack, the same spans, the
+   * same penalties — reduced to the one number the search compares. It must
+   * stay that: if the score here and the score there ever disagree, the layout
+   * returned is not the one that won, and there is a test holding them
+   * together.
+   */
+  function score(alongOffsetFt: number, acrossOffsetFt: number): number {
+    const { rows, bands, flues, aisles } = stack(acrossFt - acrossOffsetFt, acrossOffsetFt, deep);
+    const { bayStartsFt, bays } = runSpans(usableAlongFt, bayLengthFt, crossAisles, alongOffsetFt);
+    const g: ColumnGround = {
+      bands, flues, aisles, moduleStartsFt: bayStartsFt, moduleLengthFt: bayLengthFt,
+      orientation: input.orientation, wallClearanceFt: input.wallClearanceFt,
+    };
+    // A bay is killed once however many columns stand in it, so they are
+    // counted by identity — row and bay packed into one number, because a set
+    // of strings is the kind of thing that costs a large building minutes.
+    const aTab = alongVals.map((v) => alongInfo(v, g));
+    const xTab = acrossVals.map((v) => acrossInfo(v, g));
+    const killed = new Set<number>();
+    let penalty = 0;
+    for (let i = 0; i < colAlong.length; i++) {
+      const v = verdictFrom(aTab[colAlong[i]!]!, xTab[colAcross[i]!]!);
+      penalty += COLUMN_PENALTY[v.where];
+      if (v.where === 'bay') killed.add((v.row ?? 0) * (bays + 1) + (v.bay ?? 0));
+    }
+    return Math.max(0, rows * bays - killed.size) - penalty;
+  }
+
   function trial(alongOffsetFt: number, acrossOffsetFt: number) {
     const across = acrossFt - acrossOffsetFt;
-    const { rows, blocks, wallRows, usedFt, bands, flues } = stack(across, acrossOffsetFt, deep);
+    const { rows, blocks, wallRows, usedFt, bands, flues, aisles } = stack(across, acrossOffsetFt, deep);
     // Bays are counted from what the segments actually hold: nothing straddles
     // a cross aisle, so a segment's remainder is spare floor rather than a bay.
     const { bayStartsFt, crossAisleAtFt, bays } =
       runSpans(usableAlongFt, bayLengthFt, crossAisles, alongOffsetFt);
-    const columns = columnsRaw.map((c) => absorb(c, bands, flues, bayStartsFt));
+    const columns = columnsRaw.map((c) => classifyColumn(c, {
+      bands, flues, aisles, moduleStartsFt: bayStartsFt, moduleLengthFt: bayLengthFt,
+      orientation: input.orientation, wallClearanceFt: input.wallClearanceFt,
+    }));
     // one column can only kill the bay it stands in, and two in the same bay
     // kill it once. A column in an aisle or against a face costs access rather
     // than a bay, and must not be counted here.
@@ -335,7 +414,7 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
     const netBays = Math.max(0, rows * bays - baysLost);
     return {
       alongOffsetFt, acrossOffsetFt, bays, rows, blocks, wallRows, usedFt,
-      columns, baysLost, bayStartsFt, crossAisleAtFt, penalty,
+      columns, baysLost, bayStartsFt, crossAisleAtFt, penalty, bands, flues, aisles,
       netBays, score: netBays - penalty,
     };
   }
@@ -362,6 +441,9 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
   function stack(across: number, acrossOffsetFt: number, deep: number) {
     const bands: { start: number; depth: number }[] = [];
     const flues: { start: number; depth: number }[] = [];
+    const aisles: { start: number; depth: number }[] = [];
+    /** An aisle taken at `from`, recorded where the cursor spends one. */
+    const spend = (from: number) => { aisles.push({ start: from, depth: aisle }); };
     let rows = 0, blocks = 0, wallRows = 0, usedFt = 0;
     let c = acrossOffsetFt;
 
@@ -369,31 +451,42 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
       const single = deep * fd;
       const pair = deep * fd * 2 + flue;
       if (input.wallsAcross === 1) {
-        // wall, aisle, [pair, aisle] … — the last pair faces the shared aisle,
-        // which belongs to whatever is on the other side of it, not to this zone
+        /*
+         * [pair, aisle] … then the wall row — in that order, because this zone
+         * has a wall at one end only and it is the far one. The near edge is
+         * the aisle it shares with whatever stands on the other side of it,
+         * which belongs to neither zone.
+         *
+         * The counts do not care which way round this is laid; the positions
+         * very much do. Emitted wall-row-first, every band in the zone came
+         * out one aisle and one row-depth adrift of where the mixed plan draws
+         * it, so anything reading a position off this layout — where a column
+         * is standing, most of all — was reading the wrong floor. The drawing
+         * walks in from the strip's wall, so this walks the same way.
+         */
         const pairs = Math.max(0, Math.floor((across - single) / (pair + aisle)));
         wallRows = across >= single ? 1 : 0;
         rows = wallRows + pairs * 2;
         usedFt = single * wallRows + pairs * (pair + aisle);
-        if (wallRows > 0) { bands.push({ start: c, depth: single }); c += single + aisle; }
         for (let i = 0; i < pairs; i++) {
           bands.push({ start: c, depth: deep * fd });
           flues.push({ start: c + deep * fd, depth: flue });
           bands.push({ start: c + deep * fd + flue, depth: deep * fd });
-          c += pair + aisle;
+          spend(c + pair); c += pair + aisle;
         }
+        if (wallRows > 0) bands.push({ start: c, depth: single });
       } else {
         const left = across - single * 2 - aisle * 2;
         const pairs = Math.max(0, Math.floor((left + aisle) / (pair + aisle)));
         wallRows = across >= single * 2 + aisle ? 2 : across >= single ? 1 : 0;
         rows = wallRows + pairs * 2;
         usedFt = single * wallRows + pairs * pair + (pairs + 1) * aisle;
-        if (wallRows > 0) { bands.push({ start: c, depth: single }); c += single + aisle; }
+        if (wallRows > 0) { bands.push({ start: c, depth: single }); spend(c + single); c += single + aisle; }
         for (let i = 0; i < pairs; i++) {
           bands.push({ start: c, depth: deep * fd });
           flues.push({ start: c + deep * fd, depth: flue });
           bands.push({ start: c + deep * fd + flue, depth: deep * fd });
-          c += pair + aisle;
+          spend(c + pair); c += pair + aisle;
         }
         if (wallRows > 1) bands.push({ start: c, depth: single });
       }
@@ -405,73 +498,197 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
       } else {
         blocks = Math.max(0, Math.floor((across - aisle) / (block + aisle)));
         usedFt = blocks * block + (blocks + 1) * aisle;
-        c += aisle;
+        spend(c); c += aisle;
       }
-      for (let i = 0; i < blocks; i++) { bands.push({ start: c, depth: block }); c += block + aisle; }
+      for (let i = 0; i < blocks; i++) {
+        bands.push({ start: c, depth: block }); spend(c + block); c += block + aisle;
+      }
       rows = blocks * deep;
     }
-    return { rows, blocks, wallRows, usedFt, bands, flues };
+    return { rows, blocks, wallRows, usedFt, bands, flues, aisles };
   }
 
+}
+
+/* ── where a column is standing ──────────────────────────────────────────── */
+
+/** The floor a column can be standing on, as the classifier is given it. */
+export interface ColumnGround {
+  /** Rack footprints on the across axis, in envelope feet. */
+  bands: readonly { start: number; depth: number }[];
+  /** Flues between back-to-back rows. A family without them passes none. */
+  flues: readonly { start: number; depth: number }[];
   /**
-   * Where a column is standing, which is what decides whether it matters.
-   *
-   * Only the flue absorbs one outright: the back-to-back pair is pushed apart
-   * around it, which is what a designer does. In a bay it costs that bay. In
-   * the aisle it is worse than either — against a rack face it blocks the
-   * pallets behind it, and out in the middle it splits the aisle so the truck
-   * cannot get past.
-   *
-   * A column in a cross aisle is clear of everything, and so is one on a bay
-   * line where the upright already stands.
+   * The forklift aisles: the gaps the racking is worked from, as the solver
+   * spent them. Not "everything that is not a rack" — a strip of cantilever
+   * against one wall leaves most of a building as bare floor, and calling
+   * every column out there an obstruction is crying wolf on the ones that
+   * really are in the way.
    */
-  function absorb(
-    c: RackColumn, bands: { start: number; depth: number }[],
-    flues: { start: number; depth: number }[],
-    spans: readonly number[],
-  ): RackColumn {
-    const { along, across } = toEnvelope(c, input);
-    const half = BUILDING_COLUMN_IN / 24;
+  aisles: readonly { start: number; depth: number }[];
+  /** Where each module starts along the run — a bay, or a cantilever run. */
+  moduleStartsFt: readonly number[];
+  /** One module's length along the run. */
+  moduleLengthFt: number;
+  orientation: Orientation;
+  wallClearanceFt: number;
+  /** True where the run reserves no dock apron — a strip rather than a floor. */
+  noApron?: boolean;
+}
 
-    // Where the column stands along the row decides as much as where it stands
-    // across it: a flue runs between two rows and stops where they stop, so a
-    // column beyond the last bay of a segment is in the cross aisle, not in a
-    // flue that has already ended.
-    const inRacking = spans.some(
-      (s) => along > s - half && along < s + bayLengthFt + half);
+/** Where a column is standing, and nothing about the column itself. */
+export interface ColumnVerdict {
+  where: ColumnWhere;
+  absorbed: boolean;
+  row?: number;
+  bay?: number;
+}
 
-    if (!inRacking) {
-      const inZone = flues.some((f) => across > f.start - half && across < f.start + f.depth + half)
-        || bands.some((b) => across > b.start - half && across < b.start + b.depth + half);
-      // In line with the racking but past the end of a segment: a cross aisle,
-      // or the spare at the end of the row. Clear floor either way.
-      if (inZone) return { ...c, where: 'clear', absorbed: true };
-    } else if (flues.some((f) => across > f.start - half && across < f.start + f.depth + half)) {
-      return { ...c, where: 'flue', absorbed: true };
-    }
+/**
+ * Where a column is standing, which is what decides whether it matters.
+ *
+ * Only the flue absorbs one outright: the back-to-back pair is pushed apart
+ * around it, which is what a designer does. In a bay it costs that bay. In
+ * the aisle it is worse than either — against a rack face it blocks the
+ * pallets behind it, and out in the middle it splits the aisle so the truck
+ * cannot get past.
+ *
+ * A column in a cross aisle is clear of everything, and so is one on a bay
+ * line where the upright already stands.
+ *
+ * One definition, for every family that stands racking on a floor with
+ * columns in it: pallet rows have flues and bays, a cantilever strip has
+ * neither, and a mixed floor has both — but "the truck cannot get past this"
+ * means the same thing on all three, and a reader is owed the same mark for
+ * it. So the geometry is passed in and the judgement is made here.
+ *
+ * It is split in two, and this half is the judgement. It takes a pair of
+ * envelope coordinates rather than a column so the packing search can ask
+ * what an offset costs without building a column object per column per trial:
+ * the search tries every offset within one pitch by one bay in half-foot
+ * steps, some hundreds of trials, and a large floor has tens of thousands of
+ * columns. Those objects were the entire cost of solving a big building — a
+ * 10,000 ft floor spent nearly three minutes allocating twenty-eight million
+ * of them and throwing all but one trial's away.
+ *
+ * `classifyColumn` below is this function plus the column it was asked about.
+ */
+/** What the along axis alone knows: where the column is down the run. */
+export interface AlongInfo {
+  /** Level with racking that is actually there, rather than past the end of it. */
+  inRacking: boolean;
+  /** Which bay of a segment, or -1 for standing on the bay line itself. */
+  bay: number;
+}
 
-    const band = bands.findIndex((b) => across > b.start - half
-      && across < b.start + b.depth + half);
-    if (band >= 0 && inRacking) {
-      const bay = bayAt(along, spans, bayLengthFt);
-      // standing on a bay line, which carries the upright and loses nothing
-      if (bay < 0) return { ...c, where: 'flue', absorbed: true };
-      return { ...c, where: 'bay', absorbed: false, row: band, bay };
-    }
+/** What the across axis alone knows: what the column is standing between. */
+export interface AcrossInfo {
+  inFlue: boolean;
+  /** Which row band, or -1 for none. */
+  band: number;
+  nearFace: boolean;
+  inAisle: boolean;
+}
 
-    // It is in the aisle. Whether that blocks a pick face or the truck's own
-    // path depends only on how close it is to the racking either side.
-    const nearFace = bands.some((b) =>
+/**
+ * Where the column stands along the row. A flue runs between two rows and
+ * stops where they stop, so a column beyond the last bay of a segment is in
+ * the cross aisle, not in a flue that has already ended.
+ */
+export function alongInfo(along: number, g: ColumnGround): AlongInfo {
+  const half = BUILDING_COLUMN_IN / 24;
+  return {
+    inRacking: g.moduleStartsFt.some(
+      (s) => along > s - half && along < s + g.moduleLengthFt + half),
+    bay: bayAt(along, g.moduleStartsFt, g.moduleLengthFt),
+  };
+}
+
+/** Where the column stands across the rows. */
+export function acrossInfo(across: number, g: ColumnGround): AcrossInfo {
+  const half = BUILDING_COLUMN_IN / 24;
+  return {
+    inFlue: g.flues.some((f) => across > f.start - half && across < f.start + f.depth + half),
+    band: g.bands.findIndex((b) => across > b.start - half
+      && across < b.start + b.depth + half),
+    // Whether it blocks a pick face depends only on how close it is to the
+    // racking either side — a face is a face whatever the floor beside it does.
+    nearFace: g.bands.some((b) =>
       (across > b.start - COLUMN_FACE_ZONE_FT && across < b.start)
-      || (across > b.start + b.depth && across < b.start + b.depth + COLUMN_FACE_ZONE_FT));
-    // A column in the truck aisle but level with a break in the racking — a
-    // cross aisle, a bay line, or past the end of the row — blocks nothing. It
-    // is clear floor, and calling it a flue was the same mistake as above.
-    if (bands.length > 0 && bayAt(along, spans, bayLengthFt) < 0 && !nearFace) {
-      return { ...c, where: 'clear', absorbed: true };
-    }
-    return { ...c, where: nearFace ? 'face' : 'aisle', absorbed: false };
+      || (across > b.start + b.depth && across < b.start + b.depth + COLUMN_FACE_ZONE_FT)),
+    inAisle: g.aisles.some((a) => across > a.start - half && across < a.start + a.depth + half),
+  };
+}
+
+/**
+ * The verdict, from what each axis knows.
+ *
+ * The two axes are independent — nothing in this judgement needs `along` and
+ * `across` at the same time, only what each of them found — and the columns
+ * are a grid, so a floor with sixty thousand columns on it has only a couple
+ * of hundred distinct positions on either axis. The packing search works each
+ * axis out once per distinct position and combines them here, which is the
+ * difference between solving a very large building and appearing to hang.
+ */
+export function verdictFrom(a: AlongInfo, x: AcrossInfo): ColumnVerdict {
+  if (!a.inRacking) {
+    // In line with the racking but past the end of a segment: a cross aisle,
+    // or the spare at the end of the row. Clear floor either way.
+    if (x.inFlue || x.band >= 0) return { where: 'clear', absorbed: true };
+  } else if (x.inFlue) {
+    return { where: 'flue', absorbed: true };
   }
+
+  if (x.band >= 0 && a.inRacking) {
+    // standing on a bay line, which carries the upright and loses nothing
+    if (a.bay < 0) return { where: 'flue', absorbed: true };
+    return { where: 'bay', absorbed: false, row: x.band, bay: a.bay };
+  }
+
+  if (x.nearFace) return { where: 'face', absorbed: false };
+
+  /*
+   * Otherwise it is in the aisle, if it is in one at all — and two things
+   * decide that, one on each axis.
+   *
+   * Across: it has to be inside a real aisle, not merely outside the racking.
+   * A cantilever strip down one wall leaves most of a building bare, and a
+   * column standing out there is in nobody's way until something is built
+   * round it.
+   *
+   * Along: it has to be level with racking that is actually there. Past the
+   * end of the run, or across a cross aisle, the aisle has ended too.
+   *
+   * What does *not* excuse it is standing on a bay line. That rule belongs to
+   * a column inside a band, where the upright really is on that line and takes
+   * the load round it — and that case is already answered above. Out in the
+   * aisle there is no upright, only a column in the middle of where the truck
+   * drives, and applying the band's excuse here let a whole grid off: at a
+   * 40 ft column grid on an 8.25 ft bay, every column in the building landed
+   * within half a foot of a line, so a plan full of obstructions came back
+   * without a mark on it.
+   */
+  return x.inAisle && a.inRacking
+    ? { where: 'aisle', absorbed: false }
+    : { where: 'clear', absorbed: true };
+}
+
+/** Both axes, for one column, where there is only one to judge. */
+export function classifyAt(along: number, across: number, g: ColumnGround): ColumnVerdict {
+  return verdictFrom(alongInfo(along, g), acrossInfo(across, g));
+}
+
+/**
+ * Where a column is standing, which is what decides whether it matters.
+ *
+ * The wrapper the drawings and the reports use: the verdict above, carried
+ * back on the column it was asked about.
+ */
+export function classifyColumn(c: RackColumn, g: ColumnGround): RackColumn {
+  const { along, across } = toEnvelope(c, {
+    orientation: g.orientation, wallClearanceFt: g.wallClearanceFt,
+  }, g.noApron === true);
+  return { ...c, ...classifyAt(along, across, g) };
 }
 
 /* ── the envelope ────────────────────────────────────────────────────────── */
@@ -511,11 +728,15 @@ export function gridColumns(
 }
 
 /** A column's position in the rack envelope's own (along, across) feet. */
-function toEnvelope(c: RackColumn, input: RackLayoutInput) {
+function toEnvelope(
+  c: RackColumn,
+  input: { orientation: Orientation; wallClearanceFt: number },
+  noApron = false,
+) {
   const alongBuilding = input.orientation === 'length' ? c.xFt : c.yFt;
   const acrossBuilding = input.orientation === 'length' ? c.yFt : c.xFt;
   return {
-    along: alongBuilding - input.wallClearanceFt - DOCK_APRON_FT,
+    along: alongBuilding - input.wallClearanceFt - (noApron ? 0 : DOCK_APRON_FT),
     across: acrossBuilding - input.wallClearanceFt,
   };
 }
@@ -577,24 +798,31 @@ export function compareRackTypes(input: RackLayoutInput) {
  * layout being useful.
  */
 /**
- * What a building at the planner's ceiling needs saying about it.
+ * What a very large floor needs saying about it.
  *
- * Raised where a dimension has been clamped, so the customer knows the figure
- * on screen is not the one they typed.
+ * Advice, not a clamp. Trace used to hold any dimension over 750 ft at 750
+ * and tell the customer their building had been shrunk to fit the planner,
+ * which is a strange thing to say to somebody who knows how big their own
+ * shed is. The layout is now drawn at whatever size is typed; what is still
+ * worth saying is what a designer would do with a floor that big, which is
+ * zone it — and that is a decision for them, not a limit for us.
  */
 export function buildingSizeCheck(lengthFt: number, widthFt: number): Flag | null {
-  const at = [
-    lengthFt >= BUILDING_FT.max ? 'length' : null,
-    widthFt >= BUILDING_FT.max ? 'width' : null,
+  const over = [
+    lengthFt > BUILDING_ZONE_ADVICE_FT ? 'length' : null,
+    widthFt > BUILDING_ZONE_ADVICE_FT ? 'width' : null,
   ].filter(Boolean);
-  if (at.length === 0) return null;
+  if (over.length === 0) return null;
+  const biggest = Math.round(Math.max(lengthFt, widthFt));
   return {
     severity: 'check', category: 'envelope',
-    title: `This building is at the planner's limit`,
-    detail: `${BUILDING_FT.max} ft is the largest building this planner sizes, and the `
-      + `${at.join(' and ')} ${at.length > 1 ? 'have' : 'has'} been held there. `
-      + `Beyond that a designer would split the floor into zones and size each one, `
-      + `so lay out the zone you are working on rather than the whole shed.`,
+    title: 'Bigger than one layout usually covers',
+    detail: `At ${biggest} ft the ${over.join(' and ')} `
+      + `${over.length > 1 ? 'run' : 'runs'} past about ${BUILDING_ZONE_ADVICE_FT} ft, which is `
+      + `where a designer stops sizing one floor and splits it into zones — receiving at one `
+      + `end, reserve at the other — sizing each on its own. This layout covers the whole `
+      + `floor as a single block, so treat its total as an upper bound and size the zone you `
+      + `are actually working on.`,
   };
 }
 
@@ -610,7 +838,7 @@ export function envelopeChecks(
       title: 'This assumes the whole footprint is available',
       detail: `All ${Math.round(layout.usableAlongFt * layout.acrossFt).toLocaleString()} sq ft `
         + `inside the walls is counted as rackable. Staging, shipping, offices and charging `
-        + `areas typically take 20–30% of a building — set Available for rack to about 75% or `
+        + `areas typically take 20–30% of a building — set Rack area % to about 75% or `
         + `enter your own figure to see what that costs.`,
     });
   }

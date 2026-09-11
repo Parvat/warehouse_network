@@ -1,11 +1,14 @@
 /**
  * How much of a drawing to draw.
  *
- * The largest building this planner sizes is 750 ft on a side, and that is
- * almost exactly where full detail stops being worth drawing: about 38 rows of
- * 90 bays, some ten thousand shapes, each bay landing at about six pixels in a
- * figure six hundred wide. So there are two levels, not three — the third
- * existed for buildings that can no longer be entered.
+ * Around 750 ft on a side is where full detail stops being worth drawing:
+ * about 38 rows of 90 bays, some ten thousand shapes, each bay landing at
+ * about six pixels in a figure six hundred wide. There is no longer a size
+ * the planner refuses — a floor can be any size a customer's building is —
+ * so this decides how much of one to draw, at whatever size it comes.
+ *
+ * Two levels, not three. The third existed to collapse rows into a plain
+ * band, and that was worse than drawing every bay plainly.
  *
  * Draw less, never softer. A blurred or faded technical drawing reads as
  * broken; a banded one reads as a summary, and says so underneath.
@@ -40,12 +43,22 @@ const BAY_FULL_PX = 6;
 const COLUMN_PX = 4;
 
 /**
- * The most shapes one figure may emit.
+ * Past this many shapes, a label beside every row stops being worth drawing.
  *
- * A backstop rather than the main mechanism: with the building clamped at
- * 750 ft the pixel rule should catch everything first. It exists because a
- * deep-lane type at a small bay length can still run the count up, and a
- * figure that takes a second to paint is worse than one that says less.
+ * This used to cap what a figure could emit at all: past it, every row
+ * collapsed into one plain band. That collapse is gone — a bay is a fixed
+ * thing, an upright, a beam pair and the pallets between them, and drawing
+ * fewer of them than are actually there was worse than drawing them all
+ * plainly (see the note at the top of this file). Every bay is real, at any
+ * size a customer can enter, and a 750 ft building painted in well under a
+ * hundred milliseconds even at its heaviest — drive-in, 27,642 shapes — so
+ * there was never a paint-speed case for holding a shape count down.
+ *
+ * What is still true past this many shapes is that a caption beside every
+ * row becomes noise a reader cannot use, the way a ruler marked in
+ * thousandths is not more precise to someone reading it by eye. So this still
+ * decides that one thing — see `perRowLabels` below — and `simplifiedNote`
+ * says so by name rather than the drawing going quiet about what it left out.
  */
 export const ELEMENT_CEILING = 2500;
 
@@ -103,12 +116,20 @@ export function detailFor(a: {
     pxPerBay >= BAY_FULL_PX && elements <= ELEMENT_CEILING ? 'full' : 'banded';
   const columnsIndividually = pxPerFt * (a.columnSpacingFt ?? 40) >= COLUMN_PX;
   return {
+    // `bays` has nowhere left to be false — see `ELEMENT_CEILING` above — but
+    // the field stays, because `PlanFigure` still branches on it and a type
+    // this literal is the honest way to say a lever is retired without
+    // deleting the branch a future tier might want back.
     level, pxPerFt, pxPerBay,
     bays: true,
     perRowLabels: level === 'full',
     columnsIndividually,
     estimatedElements: elements,
-    simplified: !columnsIndividually,
+    // Row labels dropping is as much a simplification as the column grid
+    // collapsing — it used to go unmentioned because nothing checked `level`
+    // here, so a large building's plan went quiet about every row caption it
+    // had silently dropped.
+    simplified: !columnsIndividually || level === 'banded',
   };
 }
 
@@ -125,9 +146,14 @@ export function simplifiedNote(d: Detail, a: {
 }): string | null {
   if (!d.simplified) return null;
   // The rows are drawn as bays at every size now, so there is no longer a band
-  // to own up to — only the column grid still stands down when the marks would
-  // land on top of one another.
+  // to own up to. Two things can still stand down: the label beside each row,
+  // once there are too many rows for one to be legible against the next, and
+  // the column grid, once the marks would land on top of one another.
   const parts: string[] = [];
+  if (!d.perRowLabels) {
+    parts.push(`${a.rows.toLocaleString()} row labels dropped past `
+      + `${d.estimatedElements.toLocaleString()} shapes`);
+  }
   if (!d.columnsIndividually && a.columns > 0) {
     parts.push(`${a.columns.toLocaleString()} columns drawn as a grid`);
   }

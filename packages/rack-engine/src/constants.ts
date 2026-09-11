@@ -116,13 +116,33 @@ export const CANTILEVER_AISLE_MIN_FT = 14;
 /**
  * The building this planner will size, ft on a side.
  *
- * Not an arbitrary cap: past about 750 ft a designer splits the floor into
- * zones and sizes each one, so a single layout over the whole thing is not the
- * drawing anybody would work from. It also keeps the plan drawable — 750 ft of
- * 8 ft bays is about ninety a row, which is where a figure stops being able to
- * show them.
+ * The maximum is a sanity bound, not a working limit. It used to be 750 —
+ * held there because a floor that size costs a designer a zoning decision,
+ * and because the packing search cost time proportional to the *area* of the
+ * building, so a big floor with a column grid on it took seconds to solve and
+ * a very big one took minutes. The second reason is gone: the search now
+ * works each axis once per distinct column position rather than once per
+ * column, so a 10,000 ft floor solves in about two seconds where it used to
+ * take over two and a half minutes.
+ *
+ * The first reason was never a limit, only advice, and it is given as advice
+ * now — see `buildingSizeCheck`, which says a designer would zone a floor
+ * this size and leaves the customer to decide. What is left here stops a
+ * mistyped dimension allocating a grid of columns big enough to take the tab
+ * down with it: 10,000 ft on a side is about 2,300 acres, some forty times
+ * the largest warehouse ever built, so nothing real is being refused.
  */
-export const BUILDING_FT = { min: 40, max: 750 } as const;
+export const BUILDING_FT = { min: 40, max: 10_000 } as const;
+
+/**
+ * The floor above which a designer stops sizing one layout, ft on a side.
+ *
+ * Past about this a floor is split into zones and each is sized on its own,
+ * so a single layout over the whole thing is not the drawing anybody would
+ * work from. Trace draws it anyway — it is the customer's building — and says
+ * what a designer would do with it.
+ */
+export const BUILDING_ZONE_ADVICE_FT = 750;
 
 /** Cantilever rows a wall strip can hold. */
 export const MIXED_CANT_ROWS = { min: 1, max: 4, fallback: 1 } as const;

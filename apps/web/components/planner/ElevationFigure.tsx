@@ -491,10 +491,14 @@ function ElevationFigure({
 
   // The caption is the view's, and the way to the other view sits with it. Not
   // a bare chevron: a reader should know what is on the other side of it.
-  const what = lane ? 'ONE LANE' : 'ONE BAY';
-  const caption = title ?? (view === 'depth'
-    ? `Fig. 2 — Section, ${lane ? 'along the lane' : 'through the row'}`
-    : `Fig. 2 — Elevation, ${what.toLowerCase()}`);
+  //
+  // One word, because the head is only as wide as the drawing beneath it and an
+  // elevation's drawing is narrow: at 1440 the qualifier ran to a third line
+  // and the head, which is a fixed two lines so figures keep a shared baseline,
+  // cut it — "Fig. 2 — Section," with "through the row" silently gone. What the
+  // qualifier said is on the summary beside it and on the figure's own foot.
+  // The figure number is one atom and never breaks across lines.
+  const caption = title ?? `Fig. 2 — ${view === 'depth' ? 'Section' : 'Elevation'}`;
   const ownHead = (
     <div className="fighead">
       <span className="t">{caption}</span>

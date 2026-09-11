@@ -7,7 +7,10 @@ import {
   CANTILEVER_RUN_GAP_FT, DOCK_APRON_FT, LONG_HEAD_CLEARANCE_IN, TRUCK_PAYLOAD_LB,
 } from './constants.js';
 import { crossAisleSpans, fillSegments } from './crossaisles.js';
-import { gridColumns, type Availability, type Orientation } from './racklayout.js';
+import {
+  classifyColumn, gridColumns,
+  type Availability, type Orientation, type RackColumn,
+} from './racklayout.js';
 import type { Bom, BomLine, Flag } from './types.js';
 
 /**
@@ -161,8 +164,18 @@ export interface CantileverRunLayout {
    * draws fewer of them.
    */
   runStartsFt: readonly number[];
-  /** The building's columns, in building feet. Drawn on the plan. */
-  columns: readonly { xFt: number; yFt: number }[];
+  /**
+   * The building's columns, in building feet, each one told what it is
+   * standing in — the same judgement the pallet solver makes, from the same
+   * function, so a column in an aisle is marked the same on every sheet.
+   */
+  columns: readonly RackColumn[];
+  /** How many of them are standing in a forklift aisle. */
+  columnsInAisles: number;
+  /** The rows across the building, in envelope feet from the wall line. */
+  bandsFt: readonly { start: number; depth: number }[];
+  /** The aisles between them, in the same feet. */
+  aislesFt: readonly { start: number; depth: number }[];
   /**
    * False, and honestly so: the pallet solver slides its block to put columns
    * in flues and aisles, and nothing here does that for towers yet. The columns
@@ -365,6 +378,38 @@ export function layoutCantileverRuns(input: CantileverRunInput): CantileverRunLa
   const towersPerRow = runsPerRow * towersPerRun;
   const bases = rowSides.reduce((sum, sides) => sum + towersPerRow * sides, 0);
 
+  /*
+   * The floor, as a column standing on it would find it: the rows this strip
+   * put down, in envelope feet, walked in the order the width was spent.
+   *
+   * A cantilever row has no flue — there is no back-to-back pair to push
+   * apart — so a column between two rows is in the aisle and nothing else,
+   * which is exactly the case the drawing has to mark.
+   */
+  const rowBands: { start: number; depth: number }[] = [];
+  const rowAisles: { start: number; depth: number }[] = [];
+  {
+    let c = 0;
+    for (let r = 0; r < rows; r++) {
+      const depth = rowSides[r] === 2 ? doubleDepthFt : singleDepthFt;
+      rowBands.push({ start: c, depth });
+      // The aisle a row is worked from. The last row's is the floor beyond it,
+      // which belongs to whatever is built there next rather than to this
+      // strip — so it is not one of ours to call an obstruction.
+      if (r < rows - 1) rowAisles.push({ start: c + depth, depth: aisle });
+      c += depth + aisle;
+    }
+  }
+  const rawColumns: RackColumn[] = input.gridXFt && input.gridYFt
+    ? gridColumns(input, { xFt: input.gridXFt, yFt: input.gridYFt }).map(
+      ({ xFt, yFt }) => ({ xFt, yFt, where: 'clear' as const, absorbed: true }))
+    : [];
+  const columns = rawColumns.map((c) => classifyColumn(c, {
+    bands: rowBands, flues: [], aisles: rowAisles,
+    moduleStartsFt: runStartsFt, moduleLengthFt: runLengthFt,
+    orientation: input.orientation, wallClearanceFt: input.wallClearanceFt,
+  }));
+
   return {
     productLengthFt, towersPerRun, spanFt, towerCentresFt, overhangFt, runLengthFt,
     runGapFt: CANTILEVER_RUN_GAP_FT, runsPerRow,
@@ -377,10 +422,9 @@ export function layoutCantileverRuns(input: CantileverRunInput): CantileverRunLa
     crossAisles, crossAisleWidthFt: CROSS_AISLE_WIDTH_FT,
     crossAisleAtFt: [...crossAisleSpans(usableAlongFt, crossAisles).atFt],
     runStartsFt,
-    columns: input.gridXFt && input.gridYFt
-      ? gridColumns(input, { xFt: input.gridXFt, yFt: input.gridYFt }).map(
-        ({ xFt, yFt }) => ({ xFt, yFt }))
-      : [],
+    columns,
+    bandsFt: rowBands, aislesFt: rowAisles,
+    columnsInAisles: columns.filter((c) => c.where === 'aisle').length,
     columnsSolved: false,
     usableAlongFt, unavailableAlongFt: Math.max(0, alongFullFt - usableAlongFt),
     levels, storageLevels, armLengthIn: input.armLengthIn, baseLengthIn: input.armLengthIn,

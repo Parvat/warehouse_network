@@ -6,9 +6,13 @@ import {
   type Orientation, type RackKind, type RackLayout,
 } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
+import { columnMarks } from './ColumnMarks';
 import { columnSpacingFt, detailFor, simplifiedNote, type Detail } from './detail';
 import { FigBoxEl, FigExpand, PlanHead, type LegendItem } from './figBox';
-import { floorFraction, planBox, fitFigure, type Extent, type FigBox } from './figText';
+import {
+  aisleLabelFits, centeredCrossAisleFt, floorFraction, insideAisleLabel, outsideRowLabel, planBox, fitFigure,
+  type Extent, type FigBox,
+} from './figText';
 
 /**
  * Fig. 1 — building plan.
@@ -160,9 +164,19 @@ function PlanFigure(p: PlanFigureProps) {
   const parts: React.ReactNode[] = [];
   let key = 0;
 
-  /** A rack band: `cFt` from the top-left across the rows, `thickFt` deep. */
+  /**
+   * A rack band: `cFt` from the top-left across the rows, `thickFt` deep.
+   *
+   * It used to carry a label of its own — "wall row", "N deep" — written in
+   * the margin beside it. That was a second, uncoordinated label mechanism
+   * next to the aisle-width callouts, styled differently, shown in one
+   * orientation only, and telling a reader nothing the stats line under the
+   * drawing does not already say in every case. Removed rather than routed
+   * through the shared label rule, because there is no customer decision left
+   * in it once the depth is on the placard and the stats line both.
+   */
   let bandIndex = 0;
-  const band = (cFt: number, thickFt: number, label: string | null, nDeep: number) => {
+  const band = (cFt: number, thickFt: number, nDeep: number) => {
     const row = bandIndex++;
     if (!d.bays) {
       // Below about two pixels a bay, the ticks merge into a solid block and
@@ -188,12 +202,6 @@ function PlanFigure(p: PlanFigureProps) {
           }
           seg0 = j;
         }
-      }
-      if (label && !vertical && d.perRowLabels) {
-        const y = PY + (cFt + thickFt / 2) * sc + 3;
-        ext.text({ x: PX + W + 6, y, size: fAnno, text: label });
-        parts.push(<text key={key++} x={PX + W + 6} y={y}
-          fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}>{label}</text>);
       }
       return;
     }
@@ -225,14 +233,6 @@ function PlanFigure(p: PlanFigureProps) {
         parts.push(<rect key={key++}
           {...at(bPx - 0.8, 1.6, cFt * sc - 1, thickFt * sc + 2)} fill={G} />);
       }
-    }
-    // Rows running across the width stack twice as many bands in the same
-    // margin, so a label each is unreadable; the stats line carries the counts.
-    if (label && !vertical) {
-      const y = PY + (cFt + thickFt / 2) * sc + 3;
-      ext.text({ x: PX + W + 6, y, size: fAnno, text: label });
-      parts.push(<text key={key++} x={PX + W + 6} y={y}
-        fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}>{label}</text>);
     }
   };
 
@@ -278,24 +278,22 @@ function PlanFigure(p: PlanFigureProps) {
   };
 
   /**
-   * One aisle width, called out where there is room for it.
-   *
-   * With the rows running across the width there is no margin to hang a label
-   * in, so this one reads up the aisle itself — among the racking, on the ruled
-   * ground. In the pale grey the margin labels use it was there and could not
-   * be seen. It is a dimension, so it takes the blue the rest of the
-   * dimensions on this drawing take, the cross aisle beside it included.
+   * One aisle width, called out from the same rule every plan uses: inside
+   * the gap it dimensions, near the entrance where the floor is always real
+   * racking rather than a cross aisle, in the dimension blue — or, on a large
+   * enough building that the same aisle shrinks to a few pixels on screen,
+   * past the wall instead, where a label at this one fixed size always has
+   * room. `cFt` is the aisle's own start, across the rows.
    */
-  let aisleLabelled = false;
-  const aisleCallout = (cFt: number) => {
-    if (!vertical || aisleLabelled) return;
-    aisleLabelled = true;
+  const aisleLabel = (cFt: number) => {
+    const text = `${aisle}'`;
+    const acrossPx = (cFt + aisle / 2) * sc;
     const o = box(alongStartFt + 4, 0, cFt + aisle / 2, 0);
-    ext.text({ x: o.x, y: o.y, size: fAnno, text: `${aisle}' AISLE`, anchor: 'end', rotate: -90 });
-    parts.push(<text key={key++}
-      transform={`translate(${o.x.toFixed(1)} ${o.y.toFixed(1)}) rotate(-90)`}
-      textAnchor="end" fontFamily="JetBrains Mono" fontSize={fAnno} fill={BLUE}>
-      {aisle}&#8242; AISLE</text>);
+    const lbl = aisleLabelFits({ aisleFt: aisle, sc, size: fAnno })
+      ? insideAisleLabel(ext, { vertical, x: o.x, y: o.y, text, size: fAnno })
+      : outsideRowLabel(ext, { vertical, px: PX, py: PY, w: W, h: H, acrossPx, text, size: fAnno, fill: BLUE });
+    parts.push(<text key={key++} {...lbl}
+      fontFamily="JetBrains Mono" fontSize={fAnno} fill={BLUE}>{aisle}&#8242;</text>);
   };
 
   let c = acrossStartFt;
@@ -303,14 +301,14 @@ function PlanFigure(p: PlanFigureProps) {
     const single = deep * fd;
     const pair = deep * fd * 2 + flue;
     if (L.wallRows > 0) {
-      band(c, single, deep > 1 ? `${deep} deep` : 'wall row', deep);
+      band(c, single, deep);
       c += single;
-      aisleCallout(c);
+      aisleLabel(c);
       c += aisle;
     }
     const pairs = (L.rows - L.wallRows) / 2;
     for (let i = 0; i < pairs; i++) {
-      band(c, deep * fd, null, deep);
+      band(c, deep * fd, deep);
       const fc = c + deep * fd;
       const fh = Math.max(1.4 / sc, flue);
       if (flue > 0 && d.bays) {
@@ -319,23 +317,21 @@ function PlanFigure(p: PlanFigureProps) {
         }
         flueCallout(fc, fh);
       }
-      band(fc + fh, deep * fd, null, deep);
+      band(fc + fh, deep * fd, deep);
       c += pair;
-      if (!vertical && d.perRowLabels && (i < pairs - 1 || L.wallRows > 1)) {
-        const y = PY + (c + aisle / 2) * sc + 3;
-        ext.text({ x: PX + W + 6, y, size: fAnno, text: `${aisle}'` });
-        parts.push(<text key={key++} x={PX + W + 6} y={y}
-          fontFamily="JetBrains Mono" fontSize={fAnno} fill="#BFBBB0">{aisle}&#8242;</text>);
-      }
-      aisleCallout(c);
+      // The gap after the very last pair, when there is no far wall row to
+      // reach through it, is not a real aisle — it is spare floor with
+      // nothing on its far side, and a label on it would name a gap that
+      // does not exist.
+      if (i < pairs - 1 || L.wallRows > 1) aisleLabel(c);
       c += aisle;
     }
-    if (L.wallRows > 1) band(c, single, deep > 1 ? `${deep} deep` : 'wall row', deep);
+    if (L.wallRows > 1) band(c, single, deep);
   } else {
     const block = deep * fd;
     if (R.openEnds === 2) c += aisle;
     for (let b = 0; b < L.blocks; b++) {
-      band(c, block, `${deep} deep`, 1);
+      band(c, block, 1);
       for (let dd = 1; dd < deep; dd++) {
         const dc = c + (block * dd) / deep;
         // Per bay, not across the whole block: a lane's depth divisions are
@@ -388,11 +384,21 @@ function PlanFigure(p: PlanFigureProps) {
 
   /* circulation, dimensioned where it is drawn. A cross aisle is a gap: the
      bays stop at its edge and start again on the far side, which is why the
-     bay starts above already carry the break. */
+     bay starts above already carry the break.
+
+     The solver's own `a` is flush against the segment that follows — that is
+     what its arithmetic needs, not what a reader sees. A segment rarely
+     divides evenly into whole bays, so its last one often falls short of
+     that edge, and the true gap is centred here instead: same width, equal
+     floor either side of it. */
+  const bayEndsFt = bayStarts.map((b) => b + L.bayLengthFt);
   L.crossAisleAtFt.forEach((a, i) => {
+    const centredA = centeredCrossAisleFt({
+      atFt: a, widthFt: L.crossAisleWidthFt, endsBeforeFt: bayEndsFt, startsAfterFt: bayStarts,
+    });
     // Wall to wall: a route across the floor runs the whole width, and the
     // strip of clearance along each wall is part of it.
-    const r = box(alongStartFt + a, L.crossAisleWidthFt,
+    const r = box(alongStartFt + centredA, L.crossAisleWidthFt,
       0, vertical ? p.buildingLengthFt : p.buildingWidthFt);
     parts.push(<rect key={key++} {...r} fill="#fff" stroke={BLUE}
       strokeWidth={0.6} strokeDasharray="3 2" />);
@@ -427,20 +433,13 @@ function PlanFigure(p: PlanFigureProps) {
         stroke={BLUE} strokeWidth={0.4} opacity={0.35} />);
     }
   }
-  for (const col of d.columnsIndividually ? L.columns : []) {
-    const cx0 = PX + col.xFt * sc, cy0 = PY + col.yFt * sc;
-    const bad = col.where === 'aisle' || col.where === 'face';
-    if (col.where === 'aisle') {
-      parts.push(<circle key={key++} className="colwarn" cx={cx0} cy={cy0} r={5.4}
-        fill="none" stroke={RED} strokeWidth={1.1} />);
-    }
-    parts.push(<rect key={key++} className={bad ? 'colwarn' : undefined}
-      x={cx0 - 2.2} y={cy0 - 2.2} width={4.4} height={4.4}
-      fill={col.where === 'aisle' ? RED : col.where === 'face' ? '#C8891E' : BLUE}
-      stroke="#fff" strokeWidth={0.5}>
-      {bad && <title>{`Column at ${col.xFt} × ${col.yFt} ft: `
-        + (col.where === 'aisle' ? 'standing in an aisle' : 'against a pick face')}</title>}
-    </rect>);
+  {
+    const marks = columnMarks({
+      columns: L.columns, px: PX, py: PY, sc,
+      individually: d.columnsIndividually, keyFrom: key,
+    });
+    key += marks.length;
+    parts.push(...marks);
   }
   if (p.gridLabel) {
     ext.text({ x: PX + W, y: PY - 6, size: fAnno, text: p.gridLabel, anchor: 'end' });

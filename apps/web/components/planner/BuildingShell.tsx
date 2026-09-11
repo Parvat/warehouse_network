@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import type { Extent } from './figText';
+import { BUILDING_DIM_SCALE, type Extent } from './figText';
 
 /**
  * The building, in plan. Shared by all three Fig. 1 drawings so they cannot
@@ -55,12 +55,12 @@ export function measureShell(ext: Extent, a: {
   if (a.vertical) ext.add(a.px, a.py - 4, a.w, 4); else ext.add(a.px - 4, a.py, 4, a.h);
   ext.add(a.px, a.py - 18, a.w, 0);
   ext.text({
-    x: a.px + a.w / 2, y: a.py - 24, size: a.font,
+    x: a.px + a.w / 2, y: a.py - 24, size: a.font * BUILDING_DIM_SCALE,
     text: `${a.lengthFt}'-0"`, anchor: 'middle',
   });
   ext.add(a.px - 20, a.py, 0, a.h);
   ext.text({
-    x: a.px - 26, y: a.py + a.h / 2, size: a.font,
+    x: a.px - 26, y: a.py + a.h / 2, size: a.font * BUILDING_DIM_SCALE,
     text: `${a.widthFt}'-0"`, anchor: 'middle', rotate: -90,
   });
 }
@@ -70,7 +70,11 @@ function BuildingShell({
 }: BuildingShellProps) {
   return (
     <>
-      <rect x={px} y={py} width={w} height={h} fill="#fff" stroke={INK} strokeWidth={2.5} />
+      {/* The floor. Named like the docks are, because it is the one shape a
+          label is meant to be standing on: everything drawn on this plan
+          overlaps it by definition, so anything checking a label for clashes
+          has to be able to tell it apart from an obstruction. */}
+      <rect data-part="floor" x={px} y={py} width={w} height={h} fill="#fff" stroke={INK} strokeWidth={2.5} />
 
       {vertical ? (
         <>
@@ -96,10 +100,10 @@ function BuildingShell({
 
       <line x1={px} y1={py - 18} x2={px + w} y2={py - 18} stroke={BLUE} />
       <text x={px + w / 2} y={py - 24} textAnchor="middle" fontFamily="JetBrains Mono"
-        fontSize={font} fill={BLUE}>{lengthFt}&#8242;-0&#34;</text>
+        fontSize={font * BUILDING_DIM_SCALE} fill={BLUE}>{lengthFt}&#8242;-0&#34;</text>
       <line x1={px - 20} y1={py} x2={px - 20} y2={py + h} stroke={BLUE} />
       <text transform={`translate(${px - 26},${(py + h / 2).toFixed(1)}) rotate(-90)`} textAnchor="middle"
-        fontFamily="JetBrains Mono" fontSize={font} fill={BLUE}>{widthFt}&#8242;-0&#34;</text>
+        fontFamily="JetBrains Mono" fontSize={font * BUILDING_DIM_SCALE} fill={BLUE}>{widthFt}&#8242;-0&#34;</text>
     </>
   );
 }

@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  BUILDING_FT, buildingSizeCheck, crossAislesFor, layoutMixed, layoutRack, maxStripRows,
+  BUILDING_FT, BUILDING_ZONE_ADVICE_FT, buildingSizeCheck, crossAislesFor, layoutMixed,
+  layoutRack, maxStripRows,
   mixedChecks,
   type MixedInput, type MixedPriority, type RackLayoutInput,
 } from '../src/index.js';
@@ -214,17 +215,40 @@ test('the strip pays too, though a coarse module makes it lumpy', () => {
 
 /* ── the building the planner will size ────────────────────────────────── */
 
-test('a building at the ceiling says so, and says what to do instead', () => {
+test('a very large floor is advised, not clamped', () => {
   assert.equal(buildingSizeCheck(240, 120), null, 'an ordinary shed raises nothing');
-  assert.equal(buildingSizeCheck(BUILDING_FT.max - 1, BUILDING_FT.max - 1), null);
+  assert.equal(buildingSizeCheck(BUILDING_ZONE_ADVICE_FT, BUILDING_ZONE_ADVICE_FT), null,
+    'nor one exactly at the figure — it is "past about", not "at"');
 
-  const long = buildingSizeCheck(BUILDING_FT.max, 120);
-  assert.ok(long, 'a length at the limit raises a check');
+  const long = buildingSizeCheck(900, 120);
+  assert.ok(long, 'a length past it raises a check');
   assert.equal(long!.severity, 'check', 'a check, not a blocker: the layout is still valid');
-  assert.match(long!.detail, new RegExp(`${BUILDING_FT.max} ft`), 'naming the figure');
-  assert.match(long!.detail, /length has been held/, 'and which dimension was held');
-  assert.match(long!.detail, /split the floor into zones/, 'and what to do instead');
+  assert.match(long!.detail, /900 ft/, 'naming the size actually asked for');
+  assert.match(long!.detail, new RegExp(`${BUILDING_ZONE_ADVICE_FT} ft`), 'and the figure it is past');
+  assert.match(long!.detail, /length runs past/, 'and which dimension');
+  assert.match(long!.detail, /splits it into zones/, 'and what a designer would do');
+  assert.match(long!.detail, /upper bound/, 'and how to read the total it gives');
 
-  const both = buildingSizeCheck(BUILDING_FT.max, BUILDING_FT.max);
-  assert.match(both!.detail, /length and width have been held/, 'both, where both are');
+  const both = buildingSizeCheck(1200, 1000);
+  assert.match(both!.detail, /length and width run past/, 'both, where both are');
+  assert.match(both!.detail, /1200 ft/, 'named by the larger of the two');
+});
+
+test('the planner no longer holds a building at 750 ft', () => {
+  // The bound that is left is a sanity bound against a mistyped dimension,
+  // not a size any real building reaches — so it must be far above the size
+  // a designer would merely advise zoning.
+  assert.ok(BUILDING_FT.max > BUILDING_ZONE_ADVICE_FT * 10,
+    `the cap (${BUILDING_FT.max}) is nowhere near the advice (${BUILDING_ZONE_ADVICE_FT})`);
+
+  // And a floor well past the old ceiling still lays out, rather than being
+  // refused or silently shrunk.
+  const big = layoutRack('selective', {
+    buildingLengthFt: 2000, buildingWidthFt: 1200, beamLengthIn: 96, frameDepthIn: 42,
+    palletsPerBay: 2, levels: 4, aisleWidthFt: 12, wallClearanceFt: 2.5,
+    orientation: 'length', gridXFt: 40, gridYFt: 40,
+  });
+  assert.ok(big.positions > 0, 'a 2,000 ft floor is laid out');
+  assert.ok(big.usableAlongFt > BUILDING_ZONE_ADVICE_FT,
+    `at its real length (${big.usableAlongFt.toFixed(0)} ft), not held at 750`);
 });

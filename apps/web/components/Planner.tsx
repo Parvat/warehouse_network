@@ -3,6 +3,7 @@
 import { memo, useId, useState, Fragment, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useCallback, useRef } from 'react';
 import type { Bom as BomData, Flag, Orientation, TruckKind } from '@trace/rack-engine';
+import { ColumnNotice } from './planner/ColumnMarks';
 import PlanFigure from './planner/PlanFigure';
 import ElevationFigure from './planner/ElevationFigure';
 import { CantileverPlanFigure, CantileverElevationFigure } from './planner/CantileverFigures';
@@ -13,16 +14,13 @@ import {
   usePlannerModel,
   type ColumnsMode, type PlannerHandoff, type TypeCell,
 } from '@/lib/usePlannerModel';
-import { BUILDING_FT, ftIn, type MixedPriority } from '@trace/rack-engine';
+import { BUILDING_FT, ftIn } from '@trace/rack-engine';
 
 export type { PlannerHandoff } from '@/lib/usePlannerModel';
 
 /** Segmented options, hoisted so the JSX carries no type assertions. */
 const COLUMNS_OPTIONS: readonly (readonly [ColumnsMode, string])[] = [
   ['grid', 'Grid'], ['later', 'Later'],
-];
-const PRIORITY_OPTIONS: readonly (readonly [MixedPriority, string])[] = [
-  ['cantilever', 'Cantilever first'], ['pallets', 'Pallets first'],
 ];
 const STORING_OPTIONS: readonly (readonly ['pallets' | 'long' | 'both', string])[] = [
   ['pallets', 'Pallets'], ['long', 'Long'], ['both', 'Both'],
@@ -133,152 +131,163 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
         </section>
 
         <section className="sheet">
-          <div className="band top">
-            <div className="grp">
-              <GroupTitle no="01" name="Building" note="the box you are filling" />
-              <div className="fields">
-                {/* Held to the planner's range on blur, so a customer typing
-                    900 sees the figure settle to 750 with a flag saying why —
-                    rather than the box fighting them as they type. */}
-                <NumField label="Length" value={building.lengthFt} onChange={m.onBuilding.lengthFt}
-                  min={BUILDING_FT.min} max={BUILDING_FT.max} step={5} wide />
-                <NumField label="Width" value={building.widthFt} onChange={m.onBuilding.widthFt}
-                  min={BUILDING_FT.min} max={BUILDING_FT.max} step={5} wide />
-                <NumField label="Clear ht" value={building.clearHeightFt} onChange={m.onBuilding.clearHeightFt} min={10} />
-                <Seg label="Sprinklers" value={m.sprinklers} onChange={m.setSprinklers}
-                  options={[['ceiling', 'Ceiling'], ['in-rack', 'In-rack']] as const} />
-                {/* A footprint is not a storage area: staging, shipping, offices
-                    and charging take a fifth to a third of it. */}
-                {/* One control: the percentages a customer can estimate, and an
-                    area for the one who has measured it. */}
-                <SelectField label="Available for rack %"
-                  value={m.building.available === 'area' ? 'area' : String(m.building.availablePct)}
-                  onChange={(v) => (v === 'area' ? m.setAvailable('area')
-                    : m.setAvailablePct(Number(v)))}
-                  options={[
-                    ...m.availablePcts.map((n) => [String(n), `${n}%`] as const),
-                    ['area', 'Enter area'] as const,
-                  ]} roomy />
-                {m.building.available === 'area' && (
-                  <NumField label="Usable sq ft" value={m.building.usableSqFt}
-                    onChange={m.setUsableSqFt} min={500} step={500} wide />
-                )}
-                {/* Columns are the constraint the layout is designed around,
-                    not a deduction applied to a finished one. */}
-                <Seg label="Columns" value={m.building.columns}
-                  onChange={m.setColumnsMode} options={COLUMNS_OPTIONS} />
-                {m.building.columns === 'grid' && (
-                  <>
-                    <NumField label="Grid X ft" value={m.building.gridXFt}
-                      onChange={m.setGridXFt} min={8} step={1} narrow />
-                    <NumField label="Grid Y ft" value={m.building.gridYFt}
-                      onChange={m.setGridYFt} min={8} step={1} narrow />
-                  </>
-                )}
+          {/* The schedule and the thing it changes, side by side.
+              Three cards across the top of the sheet took the width the plan
+              needed and put every field a screen away from the drawing that
+              answers it. One panel down the left costs the drawing 296px and
+              gives the reader a field and its consequence in one glance. */}
+          <div className="deck">
+            <aside className="panel" aria-label="Rack schedule">
+              {/* Lifted out of the flow, so a long schedule scrolls inside the
+                  panel instead of making the row taller than the drawing. The
+                  same trick the flag column uses. */}
+              <div className="panelinner">
+                <PanelGroup no="01" name="Building" note="the box you are filling">
+                  {/* Any real building, at the size it actually is. The upper
+                      bound left on these is a guard against a mistyped dimension,
+                      not a size the planner refuses to draw — a floor past about
+                      750 ft raises a flag advising it be zoned, and is drawn in
+                      full anyway. */}
+                  <div className="row r3">
+                    <NumField label="Length" value={building.lengthFt} onChange={m.onBuilding.lengthFt}
+                      min={BUILDING_FT.min} max={BUILDING_FT.max} step={5} />
+                    <NumField label="Width" value={building.widthFt} onChange={m.onBuilding.widthFt}
+                      min={BUILDING_FT.min} max={BUILDING_FT.max} step={5} />
+                    <NumField label="Clear" value={building.clearHeightFt}
+                      onChange={m.onBuilding.clearHeightFt} min={10} />
+                  </div>
+                  {/* A footprint is not a storage area: staging, shipping, offices
+                      and charging take a fifth to a third of it. One control: the
+                      percentages a customer can estimate, and an area for the one
+                      who has measured it. */}
+                  <div className="row r2">
+                    <Seg label="Sprinklers" value={m.sprinklers} onChange={m.setSprinklers}
+                      options={[['ceiling', 'Ceiling'], ['in-rack', 'In-rack']] as const} />
+                    <SelectField label="Rack area %"
+                      value={m.building.available === 'area' ? 'area' : String(m.building.availablePct)}
+                      onChange={(v) => (v === 'area' ? m.setAvailable('area')
+                        : m.setAvailablePct(Number(v)))}
+                      options={[
+                        ...m.availablePcts.map((n) => [String(n), `${n}%`] as const),
+                        ['area', 'Enter area'] as const,
+                      ]} />
+                  </div>
+                  {m.building.available === 'area' && (
+                    <div className="row r2">
+                      <NumField label="Usable sq ft" value={m.building.usableSqFt}
+                        onChange={m.setUsableSqFt} min={500} step={500} />
+                    </div>
+                  )}
+                  {/* Columns are the constraint the layout is designed around,
+                      not a deduction applied to a finished one. */}
+                  <div className="row r1">
+                    <Seg label="Columns" value={m.building.columns}
+                      onChange={m.setColumnsMode} options={COLUMNS_OPTIONS} />
+                  </div>
+                  {m.building.columns === 'grid' && (
+                    <div className="row r2">
+                      <NumField label="Grid X ft" value={m.building.gridXFt}
+                        onChange={m.setGridXFt} min={8} step={1} />
+                      <NumField label="Grid Y ft" value={m.building.gridYFt}
+                        onChange={m.setGridYFt} min={8} step={1} />
+                    </div>
+                  )}
+                </PanelGroup>
+
+                <PanelGroup no="02"
+                  name={isMixed ? 'Stored goods' : isLong ? 'Cantilever' : 'Pallet'}
+                  note={isMixed ? 'pallets and long stock'
+                    : isLong ? 'what you are storing on it' : 'sets beam length and capacity'}>
+
+                  {/* Split by family the way 03 is: a pallet customer has no use
+                      for a product length, and a long-goods one has none for a
+                      pallet. */}
+                  {asksPallet && (
+                    <>
+                      {isMixed && <div className="subhead">Pallet</div>}
+                      {/* Four figures describing one object, on one line. The
+                          labels lose their units to make that fit rather than
+                          losing their size — a label nobody can read is worse
+                          than a label that trusts the reader to know a pallet
+                          is weighed in pounds. */}
+                      <div className="row r4">
+                        <NumField label="Depth" value={m.pallet.depthIn} onChange={m.onPallet.depthIn} min={24} />
+                        <NumField label="Width" value={m.pallet.widthIn} onChange={m.onPallet.widthIn} min={24} />
+                        <NumField label="Load" value={m.pallet.loadHeightIn} onChange={m.onPallet.loadHeightIn} min={12} />
+                        <NumField label="Weight" value={m.pallet.weightLb} onChange={m.onPallet.weightLb} min={100} step={50} />
+                      </div>
+                    </>
+                  )}
+
+                  {asksCant && (
+                    <>
+                      {isMixed && <div className="subhead">Cantilever</div>}
+                      <div className="row r2">
+                        <NumField label="Product ft" value={m.cant.productLengthFt}
+                          onChange={m.onCant.productLengthFt} min={m.productFt.min}
+                          max={m.productFt.max} fallback={m.productFt.fallback} />
+                        {/* Rows follow from this: a customer knows how much stock
+                            they have, not how many rows it takes. */}
+                        <NumField label="Linear ft" value={m.cant.linearFeetNeededFt}
+                          onChange={m.onCant.linearFeetNeededFt} min={50} step={50}
+                          fallback={500} />
+                      </div>
+                    </>
+                  )}
+                </PanelGroup>
+
+                <PanelGroup no="03" name="Configuration" note="how it is laid out">
+                  <div className="row r1">
+                    <Seg label="Storing" value={m.family}
+                      onChange={m.setFamily} options={STORING_OPTIONS} />
+                  </div>
+                  <div className="row r2">
+                    <Seg label="Rows run" value={m.config.orientation} onChange={m.setOrientation}
+                      options={ROWS_RUN_OPTIONS} />
+                    <StepperField label="Cross aisles" value={m.crossAisles}
+                      auto={m.crossAislesAuto} min={0} max={6} onChange={m.setCrossAisles} />
+                  </div>
+
+                  {asksPallet && (
+                    <>
+                      <div className="subhead">Pallet racking</div>
+                      <div className="row r2">
+                        {/* "AISLE: 12.5" means nothing to somebody who has never
+                            specified racking; everybody knows their truck, and
+                            the truck is what decides the aisle. */}
+                        <SelectField label="Forklift" value={m.config.truck}
+                          onChange={(v) => m.setTruck(v as TruckKind)}
+                          options={m.truckOptions} />
+                        {/* A drive-in lane has no beam across it — the pallet
+                            rests on rails along the uprights, because a beam
+                            would be in the truck path. So there is nothing to
+                            ask. Lane and cart depth is the building's answer,
+                            not a question: it is derived and reported. */}
+                        {!m.type.onePalletLanes && (
+                          <SelectField label="Beam" value={String(m.config.beamIn)}
+                            onChange={(v) => m.setBeamIn(Number(v))}
+                            options={m.beamOptions.map((b) => [String(b), `${b} in`] as const)} />
+                        )}
+                      </div>
+                    </>
+                  )}
+
+                  {asksCant && (
+                    <>
+                      <div className="subhead">Cantilever</div>
+                      <div className="row r2">
+                        {/* Arm levels are a consequence of this and the clear
+                            height, so the spacing is asked for and the levels
+                            are reported. */}
+                        <SelectField label="Arm spacing" value={String(m.cant.armSpacingIn)}
+                          onChange={(v) => m.onCant.armSpacingIn(Number(v))}
+                          options={m.armSpacingOptions.map((a) => [String(a), `${a} in`] as const)} />
+                      </div>
+                    </>
+                  )}
+                </PanelGroup>
               </div>
-            </div>
-
-            <div className="grp">
-              <GroupTitle no="02"
-                name={isMixed ? 'Stored goods' : isLong ? 'Cantilever' : 'Pallet'}
-                note={isMixed ? 'pallets and long stock'
-                  : isLong ? 'what you are storing on it' : 'sets beam length and capacity'} />
-
-              {/* Split by family the way 03 is: a pallet customer has no use for
-                  a product length, and a long-goods one has none for a pallet. */}
-              {asksPallet && (
-                <>
-                  {isMixed && <div className="subhead">Pallet</div>}
-                  <div className="fields">
-                    <NumField label="Depth" value={m.pallet.depthIn} onChange={m.onPallet.depthIn} min={24} />
-                    <NumField label="Width" value={m.pallet.widthIn} onChange={m.onPallet.widthIn} min={24} />
-                    <NumField label="Load ht" value={m.pallet.loadHeightIn} onChange={m.onPallet.loadHeightIn} min={12} />
-                    <NumField label="Weight lb" value={m.pallet.weightLb} onChange={m.onPallet.weightLb} min={100} step={50} wide />
-                  </div>
-                </>
-              )}
-
-              {asksCant && (
-                <>
-                  {isMixed && <div className="subhead">Cantilever</div>}
-                  <div className="fields">
-                    <NumField label="Product ft" value={m.cant.productLengthFt}
-                      onChange={m.onCant.productLengthFt} min={m.productFt.min}
-                      max={m.productFt.max} fallback={m.productFt.fallback} wide />
-                    {/* Rows follow from this: a customer knows how much stock
-                        they have, not how many rows it takes. */}
-                    <NumField label="Linear ft needed" value={m.cant.linearFeetNeededFt}
-                      onChange={m.onCant.linearFeetNeededFt} min={50} step={50}
-                      fallback={500} roomy />
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div className="grp">
-              <GroupTitle no="03" name="Configuration" note="how it is laid out" />
-              <div className="fields">
-                <Seg label="Storing" value={m.family}
-                  onChange={m.setFamily} options={STORING_OPTIONS} />
-                <Seg label="Rows run" value={m.config.orientation} onChange={m.setOrientation}
-                  options={ROWS_RUN_OPTIONS} />
-                {/* Only a mixed floor has this problem: two families, one
-                    width, and no way to give it to both. */}
-                {isMixed && (
-                  <Seg label="Priority" value={m.config.priority} onChange={m.setPriority}
-                    options={PRIORITY_OPTIONS} />
-                )}
-                <StepperField label="Cross aisles" value={m.crossAisles}
-                  auto={m.crossAislesAuto} min={0} max={6} onChange={m.setCrossAisles} />
-              </div>
-              {/* Fire code is the AHJ's call, not ours: Trace names the reading
-                  it worked from so a customer can disagree with it knowingly. */}
-              <p className="fieldnote">
-                A continuous rack row longer than about 100 ft usually needs a cross aisle for
-                circulation and egress. Fire code requirements vary by jurisdiction, commodity
-                and storage height — confirm with your dealer.
-              </p>
-
-              {asksPallet && (
-                <>
-                  <div className="subhead">Pallet racking</div>
-                  <div className="fields">
-                    {/* "AISLE: 12.5" means nothing to somebody who has never
-                        specified racking; everybody knows their truck, and the
-                        truck is what decides the aisle. */}
-                    <SelectField label="Forklift" value={m.config.truck}
-                      onChange={(v) => m.setTruck(v as TruckKind)}
-                      options={m.truckOptions} roomy />
-                    {/* A drive-in lane has no beam across it — the pallet rests
-                        on rails along the uprights, because a beam would be in
-                        the truck path. So there is nothing to ask. */}
-                    {!m.type.onePalletLanes && (
-                      <SelectField label="Beam" value={String(m.config.beamIn)}
-                        onChange={(v) => m.setBeamIn(Number(v))}
-                        options={m.beamOptions.map((b) => [String(b), `${b} in`] as const)} combo />
-                    )}
-                    {/* Lane and cart depth is the building's answer, not a
-                        question: an input let someone ask for a lane deeper
-                        than the floor can hold. It is derived and reported. */}
-                  </div>
-                </>
-              )}
-
-              {asksCant && (
-                <>
-                  <div className="subhead">Cantilever</div>
-                  <div className="fields">
-                    {/* Arm levels are a consequence of this and the clear
-                        height, so the spacing is asked for and the levels
-                        are reported. */}
-                    <SelectField label="Arm spacing in" value={String(m.cant.armSpacingIn)}
-                      onChange={(v) => m.onCant.armSpacingIn(Number(v))}
-                      options={m.armSpacingOptions.map((a) => [String(a), `${a} in`] as const)} combo />
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
+            </aside>
 
           <div className="stage">
             {/* A plan is a landscape box and an elevation a portrait one, so a
@@ -329,19 +338,19 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                     lane={m.type.onePalletLanes} deep={layout.deep} openEnds={m.type.openEnds}
                     depthSection={m.type.depthSection}
                     box={elBox(building.lengthFt, building.widthFt, true)} boxClass="el"
-                    title="Fig. 2 — Pallet bay" sub={`${spec.palletsPerBay} pallets / bay`} />
+                    title="Fig. 2 — Pallets" sub={`${spec.palletsPerBay} pallets / bay`} />
                   <CantileverElevationFigure layout={mixed.strip} boxClass="el"
                     clearHeightFt={building.clearHeightFt}
                     box={elBox(building.lengthFt, building.widthFt, true)}
                     labelClearHeight={false}
-                    head={<ElHead title="Fig. 3 — Cantilever tower"
+                    head={<ElHead title="Fig. 3 — Cantilever"
                       sub={`${mixed.strip.levels} arm levels + base`} />} />
                 </>
               ) : isLong ? (
                 <CantileverElevationFigure layout={runs} boxClass="el"
                   clearHeightFt={building.clearHeightFt}
                   box={elBox(building.lengthFt, building.widthFt)}
-                  head={<ElHead sub={`${runs.levels} arm levels + base · ${runs.armLengthIn} in arm`} />} />
+                  head={<ElHead sub={`${runs.levels} arm levels + base`} />} />
               ) : (
                 <ElevationFigure spec={spec} clearHeightFt={building.clearHeightFt} boxClass="el"
                   palletWidthIn={m.pallet.widthIn} palletLoadHeightIn={m.pallet.loadHeightIn}
@@ -354,6 +363,7 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                     : `${spec.palletsPerBay} pallets / bay`} />
               )}
             </div>
+          </div>
           </div>
 
           <RunSummary cells={runSummary} />
@@ -401,6 +411,9 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                   notes used to repeat the flags in a stack below the placard,
                   which read as two lists of the same thing. */}
               <div className="flags">
+                {m.aisleColumns && (
+                  <ColumnNotice inAisles={m.aisleColumns.count} holds={m.aisleColumns.holds} />
+                )}
                 {m.stripCost && (
                   <p className="stripcost" aria-live="polite">
                     The cantilever strip takes <b>{m.stripCost.widthFt.toFixed(1)} ft</b> of width
@@ -414,6 +427,17 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                   <p className="emptyflags">No flags — nothing here needs a second look.</p>
                 ) : m.flags.map((f) => <FlagCard key={f.title} flag={f} />)}
                 {m.tunnelNote && <p className="advice">{m.tunnelNote}</p>}
+                {/* Fire code is the AHJ's call, not ours: Trace names the reading
+                    it worked from so a customer can disagree with it knowingly. It
+                    reads here rather than under the stepper it explains — the
+                    schedule is controls, everything Trace has to say is this
+                    column, and a standing caveat comes after the flags that are
+                    about this building in particular. */}
+                <p className="advice">
+                  A continuous rack row longer than about 100 ft usually needs a cross aisle for
+                  circulation and egress. Fire code requirements vary by jurisdiction, commodity
+                  and storage height — confirm with your dealer.
+                </p>
                 {m.assumptions.length > 0 && (
                   <p className="assumed">
                     <b>Trace assumed:</b> {m.assumptions.join(' · ')}.{' '}
@@ -455,8 +479,15 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
 
 /* ── the schedule ──────────────────────────────────────────────────────── */
 
-/** An elevation's heading. */
-function ElHead({ title = 'Fig. 2 — Elevation, one bay', sub }: {
+/**
+ * An elevation's heading.
+ *
+ * One word after the number: the head is a fixed two lines, so figures keep a
+ * shared baseline, and an elevation's box is only as wide as its drawing. A
+ * longer caption did not wrap, it was cut. On a mixed sheet the two figures are
+ * named by family rather than by view, because that is what tells them apart.
+ */
+function ElHead({ title = 'Fig. 2 — Elevation', sub }: {
   title?: string; sub: string;
 }) {
   return (
@@ -487,10 +518,41 @@ function RunSummary({ cells }: { cells: React.ReactNode[] }) {
   );
 }
 
-function GroupTitle({ no, name, note }: { no: string; name: string; note: string }) {
+/**
+ * One numbered group of the schedule, with a way to fold it away.
+ *
+ * Open to begin with, all three of them: a customer who has not filled the
+ * sheet in yet needs to see what it is going to ask before they can judge
+ * whether to start, and a panel that opens shut hides the question. Folding is
+ * for afterwards — once the building is settled it is a heading, not six
+ * fields, and the room goes to whichever group is still being argued with.
+ *
+ * The open flag lives with the group. It is presentation state: nothing below
+ * this panel and nothing in the engine can tell whether a group is folded, and
+ * every field keeps driving the drawing while it is out of sight, because the
+ * inputs stay mounted and only the body is hidden.
+ */
+function PanelGroup({ no, name, note, children }: {
+  no: string; name: string; note: string; children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(true);
+  const id = useId();
   return (
-    <div className="grptitle">
-      <span className="no">{no}</span><h3>{name}</h3><span className="note">{note}</span>
+    <div className={cx('pgrp', !open && 'shut')}>
+      <button type="button" className="grptitle" aria-expanded={open} aria-controls={id}
+        onClick={() => setOpen((v) => !v)}>
+        <span className="no">{no}</span>
+        <h3>{name}</h3>
+        <span className="note">{note}</span>
+        <span className="tog" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" fill="none"
+            strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
+        </span>
+      </button>
+      {/* Hidden, not unmounted: a folded group's fields are still bound, so
+          nothing is lost by folding one and nothing has to be restored when it
+          comes back. */}
+      <div className="pgrpbody" id={id} hidden={!open}>{children}</div>
     </div>
   );
 }
@@ -561,8 +623,17 @@ function StepperField({ label, value, auto, min, max, onChange }: {
   const id = useId();
   const step = (by: number) => onChange(Math.max(min, Math.min(max, value + by)));
   return (
-    <div className="f w5 stepfield">
-      <label htmlFor={id}>{label}</label>
+    <div className="f stepfield">
+      {/* The marker rides on the label's line, not under the stepper: a line
+          below made this the one control in the row standing 11px clear of the
+          baseline everything else sits on. */}
+      <div className="steplbl">
+        <label htmlFor={id}>{label}</label>
+        {auto
+          ? <span className="auto">auto</span>
+          : <button type="button" className="reauto"
+              onClick={() => onChange(undefined)}>reset</button>}
+      </div>
       <div className="step">
         <button type="button" onClick={() => step(-1)} disabled={value <= min}
           aria-label={`One fewer ${label.toLowerCase()}`}>&#8722;</button>
@@ -570,9 +641,6 @@ function StepperField({ label, value, auto, min, max, onChange }: {
         <button type="button" onClick={() => step(1)} disabled={value >= max}
           aria-label={`One more ${label.toLowerCase()}`}>+</button>
       </div>
-      {auto
-        ? <span className="auto">auto</span>
-        : <button type="button" className="reauto" onClick={() => onChange(undefined)}>reset</button>}
     </div>
   );
 }
@@ -589,16 +657,18 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
 }
 
 function SelectField<T extends string>({
-  label, value, onChange, options, combo, roomy,
+  label, value, onChange, options, combo, roomy, mid,
 }: {
   label: string; value: T; onChange: (v: T) => void;
   options: readonly (readonly [T, string])[]; combo?: boolean;
   /** For a label or an option that will not fit the standard select. */
   roomy?: boolean;
+  /** Between the two: a percentage, or one short word. */
+  mid?: boolean;
 }) {
   const id = useId();
   return (
-    <div className={cx('f', combo && 'wcombo', roomy && 'w5')}>
+    <div className={cx('f', combo && 'wcombo', mid && 'w3', roomy && 'w5')}>
       <label htmlFor={id}>{label}</label>
       <select id={id} value={value} onChange={(e) => onChange(e.target.value as T)}>
         {options.map(([v, t]) => <option key={v} value={v}>{t}</option>)}

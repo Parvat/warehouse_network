@@ -3,10 +3,11 @@
 import { memo } from 'react';
 import { DOCK_APRON_FT, ftIn } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
+import { columnMarks } from './ColumnMarks';
 import { FigBoxEl, PlanHead, type LegendItem } from './figBox';
 import {
-  EL_FRAME, elevationFrameY, elevationPpi, elBox, floorFraction, planBox, fitFigure,
-  type Extent, type FigBox,
+  EL_FRAME, aisleLabelFits, centeredCrossAisleFt, elevationFrameY, elevationPpi, elBox, floorFraction,
+  insideAisleLabel, outsideRowLabel, planBox, fitFigure, type Extent, type FigBox,
 } from './figText';
 import type { CantileverRunLayout, Orientation } from '@trace/rack-engine';
 
@@ -128,22 +129,29 @@ function Plan(p: CantileverPlanProps) {
         stroke={G} strokeWidth={2} />);
     }
 
-    // label the row the way the pallet plan labels its wall rows
-    if (!vertical) {
-      const label = sides === 1 ? 'wall row' : '2 sides';
-      ext.text({ x: PX + W + 6, y: PY + colC * sc + 3, size: fAnno, text: label });
-      parts.push(<text key={key++} x={PX + W + 6} y={PY + colC * sc + 3}
-        fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}>{label}</text>);
-    }
+    // No per-row label: "2 sides" used to be called out here, past the wall,
+    // and a run of many interior rows put one there for every row it drew —
+    // the same margin cost that moved aisle labels inside the gap, on a run
+    // long enough to still change the sheet's scale between orientations.
+    // Removed rather than moved: which rows are armed from both sides is
+    // already on the placard ("Sides armed"), and there is no gap here the
+    // way an aisle is one, so there is nowhere inside a row's own band to put
+    // it without sitting on the arms.
 
     c += depthFt;
     if (r < L.rows - 1) {
-      if (!vertical) {
-        const y = PY + (c + p.aisleFt / 2) * sc + 3;
-        ext.text({ x: PX + W + 6, y, size: fAnno, text: `${p.aisleFt}'` });
-        parts.push(<text key={key++} x={PX + W + 6} y={y}
-          fontFamily="JetBrains Mono" fontSize={fAnno} fill="#BFBBB0">{p.aisleFt}&#8242;</text>);
-      }
+      // Inside the gap it dimensions, near the entrance where the floor is
+      // always real racking rather than a cross aisle — see insideAisleLabel —
+      // or past the wall, on a run of rows tight enough that this aisle no
+      // longer has room on screen for its own label — see aisleLabelFits.
+      const text = `${p.aisleFt}′`;
+      const acrossPx = (c + p.aisleFt / 2) * sc;
+      const o = box(alongStartFt + 4, 0, c + p.aisleFt / 2, 0);
+      const lbl = aisleLabelFits({ aisleFt: p.aisleFt, sc, size: fAnno })
+        ? insideAisleLabel(ext, { vertical, x: o.x, y: o.y, text, size: fAnno })
+        : outsideRowLabel(ext, { vertical, px: PX, py: PY, w: W, h: H, acrossPx, text, size: fAnno, fill: BLUE });
+      parts.push(<text key={key++} {...lbl}
+        fontFamily="JetBrains Mono" fontSize={fAnno} fill={BLUE}>{p.aisleFt}&#8242;</text>);
       c += p.aisleFt;
     }
   });
@@ -170,10 +178,14 @@ function Plan(p: CantileverPlanProps) {
       NOT AVAILABLE FOR RACK</text>);
   }
 
+  const runEndsFt = L.runStartsFt.map((r) => r + L.runLengthFt);
   L.crossAisleAtFt.forEach((a, i) => {
+    const centredA = centeredCrossAisleFt({
+      atFt: a, widthFt: L.crossAisleWidthFt, endsBeforeFt: runEndsFt, startsAfterFt: L.runStartsFt,
+    });
     // Wall to wall: a route across the floor runs the whole width, and the
     // strip of clearance along each wall is part of it.
-    const r = box(alongStartFt + a, L.crossAisleWidthFt,
+    const r = box(alongStartFt + centredA, L.crossAisleWidthFt,
       0, vertical ? p.buildingLengthFt : p.buildingWidthFt);
     // Opaque, because a cross aisle is empty floor and not a window: the runs
     // either side really stop, and anything showing through would say they do not.
@@ -189,9 +201,13 @@ function Plan(p: CantileverPlanProps) {
   });
 
   // the building's columns, drawn because they are a fact about the floor
-  for (const col of L.columns) {
-    parts.push(<rect key={key++} x={PX + col.xFt * sc - 2.2} y={PY + col.yFt * sc - 2.2}
-      width={4.4} height={4.4} fill={BLUE} stroke="#fff" strokeWidth={0.5} />);
+  // Marked for what each is standing in, the same way the pallet plan marks
+  // them — a tower row has aisles between it and the next just as a pallet
+  // row does, and a column in one stops the same truck.
+  {
+    const cols = columnMarks({ columns: L.columns, px: PX, py: PY, sc, individually: true, keyFrom: key });
+    key += cols.length;
+    parts.push(...cols);
   }
 
 

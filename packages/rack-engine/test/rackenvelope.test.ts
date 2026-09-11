@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   AVAILABLE_THREE_QUARTERS, DOCK_APRON_FT, LANE_CLEARANCE_IN, laneWidthFt, COLUMN_PENALTY, CROSS_AISLE_WIDTH_FT, crossAislesFor,
-  TRUCK_AISLE_RANGE_FT, gridColumns, layoutRack, rackType, truckAisleCheck, truckAisleFt,
+  TRUCK_AISLE_RANGE_FT, gridColumns, layoutCantileverRuns, layoutMixed, layoutRack,
+  rackType, truckAisleCheck, truckAisleFt,
   type ColumnWhere, type RackLayout, type RackLayoutInput, type TruckKind,
 } from '../src/index.js';
 
@@ -506,4 +507,129 @@ test('the same building solves identically however its figure is sized', () => {
     assert.equal(again.positions, first.positions);
   }
   assert.deepEqual([first.rows, first.bays], [10, 24]);
+});
+
+/* ── 7. a wall row is a single, and the packing is paid for as one ─────── */
+
+/**
+ * The width is filled as: single wall row, aisle, [back-to-back pair, aisle]
+ * repeated, single wall row. Nobody reaches the far side of a pair standing
+ * against a wall, so a wall row is one frame deep with no flue behind it —
+ * and pricing it as a pair would cost `2 x (frameDepth + flue)` of floor that
+ * is not there to spend, which is a pair of rows lost on a building this size.
+ *
+ * The figures are the ones a customer can check on the drawing: 120 ft wall to
+ * wall, a 42 in upright, a 9 in flue, a 12 ft aisle and 3 in of clearance at
+ * each wall — 1434 in to fill.
+ *
+ *   ends     = 2 x 42                        =   84 in
+ *   pair     = 2 x 42 + 9                    =   93 in
+ *   used(p)  = 84 + p x (93 + 144) + 144
+ *   used(5)  = 84 + 1185 + 144               = 1413 in  <= 1434, fits
+ *   used(6)  = 84 + 1422 + 144               = 1650 in  >  1434, does not
+ *
+ * so five pairs and two wall rows: twelve rows.
+ */
+test('the two wall rows are singles, and the width holds twelve rows for it', () => {
+  const wall = { frameDepthIn: 42, aisleWidthFt: 12, buildingWidthFt: 120 };
+  for (const wallClearanceFt of [0.25, 0]) {
+    const l = at({ ...wall, wallClearanceFt });
+    assert.equal(l.rows, 12, `${(120 - wallClearanceFt * 2) * 12} in of width holds 12 rows`);
+    assert.equal(l.wallRows, 2, 'two of them standing against a wall, single');
+  }
+});
+
+/**
+ * The same again at a width where paying for the ends twice would show, so the
+ * count is coming off the two singles rather than off a number that happens to
+ * be right at 120 ft.
+ */
+test('the end singles are counted, not assumed', () => {
+  const fdFt = 42 / 12, flueFt = 9 / 12, aisleFt = 12;
+  const pairFt = fdFt * 2 + flueFt;
+
+  for (const buildingWidthFt of [100, 120, 160]) {
+    const clearanceFt = 0.25;
+    const acrossFt = buildingWidthFt - clearanceFt * 2;
+    // what the floor holds with the ends priced as singles, which is the rule
+    const asSingles = Math.floor((acrossFt - fdFt * 2 - aisleFt) / (pairFt + aisleFt));
+    // and what it would hold if a wall row were charged as a whole pair
+    const asPairs = Math.floor((acrossFt - pairFt * 2 - aisleFt) / (pairFt + aisleFt));
+
+    const l = at({ frameDepthIn: 42, aisleWidthFt: aisleFt, buildingWidthFt, wallClearanceFt: clearanceFt });
+    assert.equal(l.rows, 2 + asSingles * 2,
+      `${buildingWidthFt} ft holds ${2 + asSingles * 2} rows`);
+    assert.ok(asPairs < asSingles,
+      `${buildingWidthFt} ft is a width where the difference shows `
+      + `(${2 + asSingles * 2} rows against ${2 + asPairs * 2})`);
+  }
+});
+
+/* ── 8. every family says where a column is standing ───────────────────── */
+
+const cantBase = {
+  buildingLengthFt: 240, buildingWidthFt: 120, clearHeightFt: 28,
+  aisleWidthFt: 12.5, wallClearanceFt: 2.5,
+  productLengthFt: 20, armLengthIn: 48, armSpacingIn: 24,
+  orientation: 'length' as const, crossAisles: 2, linearFeetNeededFt: 40000,
+};
+
+test('a cantilever strip says where its columns are standing, not just that they exist', () => {
+  const l = layoutCantileverRuns({ ...cantBase, gridXFt: 25, gridYFt: 25 });
+
+  assert.ok(l.columns.length > 0, 'there are columns to judge');
+  assert.ok(l.columns.every((c) => c.where !== undefined),
+    'and every one of them has been judged');
+  assert.ok(l.columnsInAisles > 0,
+    `a 25 x 25 grid puts some of them in an aisle (${l.columnsInAisles} of ${l.columns.length})`);
+  assert.equal(l.columnsInAisles, l.columns.filter((c) => c.where === 'aisle').length,
+    'and the count is the list, not a second opinion');
+
+  // The rows have no flue to swallow one — a cantilever row is not a
+  // back-to-back pair — so nothing may come back absorbed into one.
+  const inRow = l.columns.filter((c) => c.where === 'bay');
+  assert.ok(inRow.length > 0, 'some stand in a row, which costs that run');
+});
+
+test('a mixed floor judges a column against both zones, not one', () => {
+  const mixedBase = {
+    buildingLengthFt: 240, buildingWidthFt: 120, clearHeightFt: 28,
+    wallClearanceFt: 2.5,
+    cantilever: { linearFeetNeededFt: 500, productLengthFt: 20, armLengthIn: 48 },
+    pallet: {
+      kind: 'selective' as const, beamLengthIn: 96, palletsPerBay: 2, levels: 4,
+      frameDepthIn: 42, aisleWidthFt: 12.5,
+      palletWidthIn: 40, palletDepthIn: 48, palletLoadHeightIn: 52, palletWeightLb: 2200,
+      rotation: 'any' as const,
+    },
+    gridXFt: 25, gridYFt: 25, orientation: 'width' as const,
+  };
+  const m = layoutMixed(mixedBase);
+
+  assert.ok(m.columns.length > 0, 'the floor has columns');
+  assert.equal(m.columnsInAisles, m.columns.filter((c) => c.where === 'aisle').length);
+  assert.ok(m.columnsInAisles > 0, 'some of them are standing in an aisle');
+
+  // Neither zone can answer for the floor, and the numbers say so: the strip
+  // is one row here and has no aisle of its own to find anything in, and the
+  // pallet zone is solved in a shortened building and does not even see the
+  // same columns. Only the two together know what a column is standing in.
+  assert.notEqual(m.columnsInAisles, m.strip.columnsInAisles,
+    `strip alone ${m.strip.columnsInAisles}, floor ${m.columnsInAisles}`);
+  assert.notEqual(m.columnsInAisles, m.pallets.columnsInAisles,
+    `pallet zone alone ${m.pallets.columnsInAisles}, floor ${m.columnsInAisles}`);
+  assert.ok(m.columns.some((c) => c.where === 'bay'),
+    'and some standing in racking, which is not an aisle');
+});
+
+test('a column in a rack is never reported as standing in an aisle', () => {
+  for (const grid of [{ xFt: 20, yFt: 30 }, { xFt: 25, yFt: 25 }, { xFt: 30, yFt: 40 }]) {
+    const l = at({ gridXFt: grid.xFt, gridYFt: grid.yFt });
+    for (const c of l.columns) {
+      if (c.where === 'aisle') {
+        assert.equal(c.absorbed, false, 'a column in an aisle is never absorbed');
+        assert.equal(c.bay, undefined, 'and it has taken no bay with it');
+      }
+    }
+  }
 });

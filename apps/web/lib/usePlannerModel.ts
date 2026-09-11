@@ -190,6 +190,16 @@ export interface PlannerModel {
   crossAislesAuto: boolean;
   /** What the columns did to this layout, in a sentence. */
   columnNote: string | undefined;
+  /**
+   * The columns standing in a forklift aisle on the floor that is showing,
+   * and what that floor's capacity is counted in.
+   *
+   * Read off whichever family is on screen rather than off the pallet layout,
+   * because a cantilever strip and a mixed floor have their own columns and
+   * their own aisles — and their own currency: linear feet of arm is not
+   * pallet positions and never converts to it.
+   */
+  aisleColumns: { count: number; holds: 'positions' | 'linear' | 'both' } | undefined;
   /** Everything Trace assumed rather than asked, for the one-line summary. */
   assumptions: readonly string[];
   truckRange: { min: number; max: number };
@@ -515,6 +525,8 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
 
   const isLong = family === 'long';
   const isMixed = family === 'both';
+  const aisleColumnCount = isMixed ? mixed.columnsInAisles
+    : isLong ? runs.columnsInAisles : layout.columnsInAisles;
 
   // The floor Trace assumed, rather than the racking it drew on it.
   const envelopeFlags = useMemo(() => envelopeChecks(layout, {
@@ -598,6 +610,13 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
       : undefined,
     columnNote: building.columns === 'grid' && !isLong
       ? columnNote(layout, { xFt: building.gridXFt, yFt: building.gridYFt })
+      : undefined,
+    // Undefined where there is nothing to say: a notice that renders "0
+    // columns fall in a forklift aisle" is noise in a column meant for the
+    // things that need a second look.
+    aisleColumns: aisleColumnCount > 0
+      ? { count: aisleColumnCount,
+          holds: isMixed ? 'both' as const : isLong ? 'linear' as const : 'positions' as const }
       : undefined,
     assumptions: isLong ? [] : assumptions,
     truckRange: TRUCK_AISLE_RANGE_FT[config.truck],

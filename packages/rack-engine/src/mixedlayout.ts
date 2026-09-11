@@ -6,7 +6,8 @@ import {
   type CantileverRunInput, type CantileverRunLayout,
 } from './cantileverruns.js';
 import {
-  layoutRack, type Availability, type Orientation, type RackLayout, type RackLayoutInput,
+  classifyColumn, gridColumns, layoutRack,
+  type Availability, type Orientation, type RackColumn, type RackLayout, type RackLayoutInput,
 } from './racklayout.js';
 import { rackType, type RackKind } from './racktypes.js';
 import type { Bom, BomLine, Flag } from './types.js';
@@ -99,6 +100,14 @@ export interface MixedInput {
 }
 
 export interface MixedLayout {
+  /**
+   * The building's columns, judged against both zones at once — see where
+   * they are classified in `layoutMixed`. The count of the ones standing in
+   * a forklift aisle comes with them, because that is the one a reader has to
+   * be told about.
+   */
+  columns: readonly RackColumn[];
+  columnsInAisles: number;
   /** Always the first wall: which side it sits on is not worth a question. */
   wall: MixedWall;
   strip: CantileverRunLayout;
@@ -247,8 +256,47 @@ export function layoutMixed(input: MixedInput): MixedLayout {
   const pallets = layoutRack(input.pallet.kind, palletInputFor(input, stripTotalDepthFt, 1));
   const palletsAlone = layoutRack(input.pallet.kind, palletInputFor(input, 0, 2));
 
+  /*
+   * A column on a mixed floor is judged against the whole floor, once.
+   *
+   * Neither zone can answer it alone: the strip sees the pallet racking as
+   * open floor and the pallet solver sees the strip the same way, so a column
+   * standing in a rack row of the other family would come back "in the aisle"
+   * from whichever zone was asked. The two sets of rows are put end to end
+   * here — the strip from the wall, the pallet zone behind it — and the one
+   * classifier reads them together.
+   *
+   * The pallet zone is solved in a building shortened by the strip, so its
+   * bands start again at that zone's own wall; adding the strip's depth puts
+   * them back where they stand on the floor.
+   */
+  const mixedBands = [
+    ...strip.bandsFt,
+    ...pallets.bandsFt.map((b) => ({ start: b.start + stripTotalDepthFt, depth: b.depth })),
+  ];
+  const mixedFlues = pallets.fluesFt.map(
+    (f) => ({ start: f.start + stripTotalDepthFt, depth: f.depth }));
+  // The strip's own aisles, the one both zones share, and the pallet zone's —
+  // every gap on this floor that a truck actually works out of.
+  const floorAisles = [
+    ...strip.aislesFt,
+    { start: stripDepthFt, depth: sharedAisleFt },
+    ...pallets.aislesFt.map((a) => ({ start: a.start + stripTotalDepthFt, depth: a.depth })),
+  ];
+  const columns = input.gridXFt && input.gridYFt
+    ? gridColumns(input, { xFt: input.gridXFt, yFt: input.gridYFt }).map((c) => classifyColumn(c, {
+      bands: mixedBands, flues: mixedFlues, aisles: floorAisles,
+      // Both zones break their runs at the same feet — one calculation, from
+      // the building — so the pallet zone's bay starts stand for the floor.
+      moduleStartsFt: pallets.bayStartsFt, moduleLengthFt: pallets.bayLengthFt,
+      orientation: input.orientation, wallClearanceFt: input.wallClearanceFt,
+    }))
+    : [];
+
   return {
     wall: 'top',
+    columns,
+    columnsInAisles: columns.filter((c) => c.where === 'aisle').length,
     strip, pallets, palletsAlone,
     cantileverRows, stripDepthFt, cantileverAisleFt, sharedAisleFt, stripTotalDepthFt,
     palletWidthFt, acrossFt,

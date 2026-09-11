@@ -5,8 +5,12 @@ import {
   DOCK_APRON_FT, rackType, type MixedLayout, type Orientation, type RackKind,
 } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
+import { columnMarks } from './ColumnMarks';
 import { FigBoxEl, PlanHead, type LegendItem } from './figBox';
-import { floorFraction, planBox, fitFigure, type Extent, type FigBox } from './figText';
+import {
+  aisleLabelFits, centeredCrossAisleFt, floorFraction, insideAisleLabel, outsideRowLabel, planBox, fitFigure,
+  type Extent, type FigBox,
+} from './figText';
 
 /**
  * Fig. 1 for a mixed floor: a cantilever strip against one wall and pallet
@@ -134,27 +138,22 @@ function MixedPlan(p: MixedPlanProps) {
     return start;
   };
   /**
-   * What a band is, written beside it.
-   *
-   * With the rows running along the length the bands stack down the page and
-   * each gets a line in the right margin. Across the width they stack across
-   * it, and there is no margin to use — so the label reads up the band itself,
-   * the way the pallet-only plan calls out its aisles. It used to give up and
-   * draw nothing at all there, which left that orientation with no aisle widths
-   * and no row labels on it anywhere.
+   * An aisle width, inside the gap it dimensions rather than past the
+   * building — see `insideAisleLabel` — or past it, on a building large
+   * enough that this aisle no longer has room on screen for its own label —
+   * see `aisleLabelFits`. Near the entrance, where the floor is always real
+   * racking rather than a cross aisle. `cFt` is the aisle's own start, across
+   * the rows.
    */
-  const marginLabel = (cFt: number, text: string, fill = MUT, size = fAnno) => {
-    if (vertical) {
-      const o = box(alongStartFt + 4, 0, cFt, 0);
-      ext.text({ x: o.x, y: o.y, size, text, anchor: 'end', rotate: -90 });
-      parts.push(<text key={key++}
-        transform={`translate(${o.x.toFixed(1)} ${o.y.toFixed(1)}) rotate(-90)`}
-        textAnchor="end" fontFamily="JetBrains Mono" fontSize={size} fill={fill}>{text}</text>);
-      return;
-    }
-    ext.text({ x: PX + W + 6, y: PY + cFt * sc + 3, size, text });
-    parts.push(<text key={key++} x={PX + W + 6} y={PY + cFt * sc + 3}
-      fontFamily="JetBrains Mono" fontSize={size} fill={fill}>{text}</text>);
+  const aisleLabel = (cFt: number, aisleFt: number) => {
+    const text = `${aisleFt}′`;
+    const acrossPx = (cFt + aisleFt / 2) * sc;
+    const o = box(alongStartFt + 4, 0, cFt + aisleFt / 2, 0);
+    const lbl = aisleLabelFits({ aisleFt, sc, size: fAnno })
+      ? insideAisleLabel(ext, { vertical, x: o.x, y: o.y, text, size: fAnno })
+      : outsideRowLabel(ext, { vertical, px: PX, py: PY, w: W, h: H, acrossPx, text, size: fAnno, fill: BLUE });
+    parts.push(<text key={key++} {...lbl}
+      fontFamily="JetBrains Mono" fontSize={fAnno} fill={BLUE}>{aisleFt}&#8242;</text>);
   };
 
   /* ── the strip ───────────────────────────────────────────────────────── */
@@ -186,7 +185,13 @@ function MixedPlan(p: MixedPlanProps) {
       }
       parts.push(<line key={key++} {...seg(towerA, S.spanFt, colC, 0)} stroke={G} strokeWidth={1.8} />);
     }
-    marginLabel(colC, sides === 1 ? 'wall row' : '2 sides');
+    // No per-row label: "2 sides" used to be called out here, in the margin
+    // past the wall, and a run of many interior rows put one there for every
+    // row — the same margin cost that moved aisle labels inside, just never
+    // fixed for this one. Removed rather than moved: which rows are armed
+    // from both sides is already on the placard ("Sides armed"), and there is
+    // no gap here the way an aisle is one, so there is nowhere inside a row's
+    // own band to put it without sitting on the arms.
   };
 
   for (let r = 0; r < M.cantileverRows; r++) {
@@ -194,7 +199,7 @@ function MixedPlan(p: MixedPlanProps) {
     cantRow(take(sides === 2 ? S.doubleDepthFt : S.singleDepthFt), sides, r);
     if (r < M.cantileverRows - 1) {
       const ay = take(M.cantileverAisleFt);
-      marginLabel(ay + M.cantileverAisleFt / 2, `${M.cantileverAisleFt}′`, BLUE);
+      aisleLabel(ay, M.cantileverAisleFt);
     }
   }
 
@@ -291,7 +296,7 @@ function MixedPlan(p: MixedPlanProps) {
    * gives real segments with empty floor between them — and nothing has to be
    * painted over anything.
    */
-  const band = (cFt: number, thickFt: number, label: string | null, nDeep: number) => {
+  const band = (cFt: number, thickFt: number, nDeep: number) => {
     for (const bs of L.bayStartsFt) {
       const a0 = alongStartFt + bs;
       parts.push(<rect key={key++} {...box(a0, L.bayLengthFt, cFt, thickFt)}
@@ -311,14 +316,25 @@ function MixedPlan(p: MixedPlanProps) {
           {...at(bPx - 0.8, 1.6, cFt * sc - 1, thickFt * sc + 2)} fill={G} />);
       }
     }
-    if (label) marginLabel(cFt + thickFt / 2, label);
   };
+
+  /*
+   * The pallet solver slid its block to clear the columns, and the drawing has
+   * to sit where it put it — the same rule the pallet-only plan follows with
+   * `acrossOffsetFt`, which this walk was missing. Without it the racking was
+   * drawn wherever the cursor happened to arrive, up to a full aisle out of
+   * position: at a 40 ft column grid the whole zone landed 9.5 ft from where
+   * the solver had it, so the plan and the count described different floors,
+   * and a column the solver had tucked into a flue was drawn standing in the
+   * open.
+   */
+  take(L.acrossOffsetFt);
 
   if (R.pick === 'aisle') {
     const pairs = Math.max(0, (L.rows - L.wallRows) / 2);
     for (let i = 0; i < pairs; i++) {
       const c0 = take(deep * fd * 2 + flue);
-      band(c0, deep * fd, null, deep);
+      band(c0, deep * fd, deep);
       const fc = c0 + deep * fd;
       const fh = Math.max(1.4 / sc, flue);
       // A flue is the gap between the two rows of a back-to-back pair, so it
@@ -331,20 +347,20 @@ function MixedPlan(p: MixedPlanProps) {
             fill={Y} />);
         }
       }
-      band(fc + fh, deep * fd, null, deep);
+      band(fc + fh, deep * fd, deep);
       const ac = take(p.aisleFt);
-      marginLabel(ac + p.aisleFt / 2, `${p.aisleFt}′`, BLUE);
+      aisleLabel(ac, p.aisleFt);
     }
     // the far wall is a real wall, so its row is single
     if (L.wallRows > 0) {
-      band(take(deep * fd), deep * fd, deep > 1 ? `${deep} deep` : 'wall row', deep);
+      band(take(deep * fd), deep * fd, deep);
     }
   } else {
     const blockFt = deep * fd;
     if (R.openEnds === 2) take(p.aisleFt);
     for (let bkt = 0; bkt < L.blocks; bkt++) {
       const c0 = take(blockFt);
-      band(c0, blockFt, `${deep} deep`, deep);
+      band(c0, blockFt, deep);
       /*
        * The same access marks the pallet-only plan draws.
        *
@@ -400,10 +416,21 @@ function MixedPlan(p: MixedPlanProps) {
      a fire officer would call it. Nothing is painted over racking either way:
      the rows genuinely stop and start again, and this is white floor with a
      dashed edge, not a window onto rack seen through it. */
+  // Both zones' real faces count: a cantilever run and a pallet bay do not
+  // divide a segment the same way, so the nearer true edge on either side of
+  // the gap can come from whichever zone actually reaches furthest into it.
+  const endsBeforeFt = [
+    ...L.bayStartsFt.map((b) => b + L.bayLengthFt),
+    ...S.runStartsFt.map((r) => r + S.runLengthFt),
+  ];
+  const startsAfterFt = [...L.bayStartsFt, ...S.runStartsFt];
   L.crossAisleAtFt.forEach((a, i) => {
+    const centredA = centeredCrossAisleFt({
+      atFt: a, widthFt: L.crossAisleWidthFt, endsBeforeFt, startsAfterFt,
+    });
     // Wall to wall: a route across the floor runs the whole width, and the
     // strip of clearance along each wall is part of it.
-    const r = box(alongStartFt + a, L.crossAisleWidthFt,
+    const r = box(alongStartFt + centredA, L.crossAisleWidthFt,
       0, vertical ? p.buildingLengthFt : p.buildingWidthFt);
     parts.push(<rect key={key++} {...r} fill="#fff" stroke={BLUE} strokeWidth={0.6}
       strokeDasharray="3 2" />);
@@ -416,9 +443,13 @@ function MixedPlan(p: MixedPlanProps) {
     }
   });
 
-  for (const col of S.columns) {
-    parts.push(<rect key={key++} x={PX + col.xFt * sc - 2.2} y={PY + col.yFt * sc - 2.2}
-      width={4.4} height={4.4} fill={BLUE} stroke="#fff" strokeWidth={0.5} />);
+  // The mixed floor's own columns, not the strip's: the strip alone sees the
+  // pallet zone as open floor and would call every column standing in it an
+  // obstruction. `layoutMixed` judges them against both zones at once.
+  {
+    const cols = columnMarks({ columns: M.columns, px: PX, py: PY, sc, individually: true, keyFrom: key });
+    key += cols.length;
+    parts.push(...cols);
   }
 
     return (
