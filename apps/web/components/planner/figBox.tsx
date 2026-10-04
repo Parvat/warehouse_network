@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import type { LaneAccess } from '@trace/rack-engine';
 import type { FigBox } from './figText';
 
 /**
@@ -50,6 +51,32 @@ export function FigBoxEl({ aspect, className, head, info, children, foot }: {
 export interface LegendItem {
   swatch: React.ReactNode;
   label: string;
+}
+
+const ACCESS_RED = '#A8341C';
+const ARROW_IN = <path d="M5 0.4v5.2m0 0l-2.4 -2.4m2.4 2.4l2.4 -2.4" stroke={ACCESS_RED} strokeWidth={1.1} fill="none" />;
+
+/**
+ * The key entry for how a zone's lanes are reached, matching the marks the
+ * plan draws: a truck driving into a drive-in or drive-through lane, a flow
+ * lane loaded at one end and picked at the other, a push-back row worked from
+ * its aisle face. Nothing for racking picked straight off a beam.
+ */
+export function accessLegend(access: LaneAccess | undefined): LegendItem | null {
+  if (access === 'entry') return { label: 'TRUCK ENTRY', swatch: ARROW_IN };
+  if (access === 'face') return { label: 'PICK FACE', swatch: ARROW_IN };
+  if (access === 'flow') {
+    return {
+      label: 'LOAD → PICK',
+      swatch: (
+        <g stroke={ACCESS_RED} strokeWidth={1.1} fill="none">
+          <circle cx={1.8} cy={3} r={1.2} />
+          <path d="M3 3H9.4m-2.2 -1.9l2.2 1.9l-2.2 1.9" />
+        </g>
+      ),
+    };
+  }
+  return null;
 }
 
 /**

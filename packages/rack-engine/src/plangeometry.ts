@@ -47,16 +47,33 @@ export interface GeomRackBand extends AcrossSpan {
   /** Pallets deep in this band. */
   deep: number;
   /**
-   * Which ends of a lane block a truck enters, in building terms: `near` is
-   * the end at the lower `cFt`. Empty for a row picked from an aisle.
+   * Which ends of a drive-in or drive-through block a truck drives into, in
+   * building terms: `near` is the end at the lower `cFt`. Empty for every
+   * other type — a flow lane is loaded at one end and picked at the other, and
+   * a push-back row is worked from its face.
    */
   openEnds: readonly ('near' | 'far')[];
+  /**
+   * A pallet-flow block: the end it is loaded from and the end it is picked
+   * from. Pallets roll from load to pick.
+   */
+  flow?: { load: 'near' | 'far'; pick: 'near' | 'far' };
+  /**
+   * A push-back row: the side facing its aisle, where it is both loaded and
+   * picked — pallets push back from there, and come forward to it.
+   */
+  face?: 'near' | 'far';
 }
+
+/** How the lanes of a zone are reached, so the plan can key what it draws. */
+export type LaneAccess = 'entry' | 'flow' | 'face';
 
 export interface GeomPalletZone {
   kind: RackKind;
   /** Lanes rather than beam bays: no beam crosses where the truck drives. */
   lanes: boolean;
+  /** How this zone's lanes are reached; absent for selective and double-deep. */
+  access?: LaneAccess;
   bands: readonly GeomRackBand[];
   flues: readonly AcrossSpan[];
   aisles: readonly AcrossSpan[];
@@ -164,26 +181,54 @@ function base(frame: PlanFrame): Omit<PlanGeometry, 'crossAisles'> {
  * `place` maps a span the solver measured from the zone's own near edge to the
  * building: straight on for a zone that starts at a wall, mirrored for one laid
  * in from the far wall. `nearIsFront` says whether the solver's "front" end of
- * a lane block is the building's near end after that mapping.
+ * a lane block is the building's near end after that mapping. `sharedAisles`
+ * are aisles this zone faces that it does not own — on a mixed floor, the one
+ * it shares with the strip.
  */
 function palletZone(
   kind: RackKind, L: RackLayout, alongStartFt: number,
   place: (s: { start: number; depth: number }) => AcrossSpan, nearIsFront: boolean,
+  sharedAisles: readonly AcrossSpan[] = [],
 ): GeomPalletZone {
   const R = rackType(kind);
   const lane = R.pick === 'lane';
+  const access: LaneAccess | undefined = kind === 'flow' ? 'flow'
+    : lane ? 'entry' : kind === 'pushback' ? 'face' : undefined;
   const front = nearIsFront ? 'near' : 'far', back = nearIsFront ? 'far' : 'near';
-  const bands: GeomRackBand[] = L.bandsFt.map((b, i) => ({
-    ...place(b),
-    deep: L.deep,
-    openEnds: !lane || R.openEnds === 0 ? []
-      : R.openEnds === 2 ? ['near', 'far']
-        : [L.blockAccess[i] === 'back' ? back : front],
-  }));
+  const aisles = L.aislesFt.map(place);
+  const all = [...aisles, ...sharedAisles];
+  const touches = (x: number) => all.some((a) => Math.abs(a.cFt - x) < 0.01 || Math.abs(a.cFt + a.depthFt - x) < 0.01);
+
+  const bands: GeomRackBand[] = L.bandsFt.map((b, i) => {
+    const span = place(b);
+    const band: GeomRackBand = {
+      ...span,
+      deep: L.deep,
+      openEnds: access !== 'entry' ? []
+        : R.openEnds === 2 ? ['near', 'far']
+          : [L.blockAccess[i] === 'back' ? back : front],
+    };
+    if (access === 'flow') {
+      /*
+       * Neighbouring flow blocks run opposite ways, so each pair picks into
+       * the aisle between them and loads from the aisles either side: one pick
+       * face for two blocks, which is how flow lanes are laid out. The first
+       * block, from the solver's near edge, picks at its back.
+       */
+      const pickBack = i % 2 === 0;
+      band.flow = { load: pickBack ? front : back, pick: pickBack ? back : front };
+    }
+    if (access === 'face') {
+      // the side that touches an aisle — not the flue it is paired across, nor a wall
+      const nearOpen = touches(span.cFt), farOpen = touches(span.cFt + span.depthFt);
+      if (nearOpen || farOpen) band.face = farOpen && !nearOpen ? 'far' : 'near';
+    }
+    return band;
+  });
   return {
-    kind, lanes: lane, bands,
+    kind, lanes: lane, access, bands,
     flues: L.fluesFt.map(place),
-    aisles: L.aislesFt.map(place),
+    aisles,
     bayStartsFt: L.bayStartsFt.map((b) => alongStartFt + b),
     bayLengthFt: L.bayLengthFt,
     palletsAcross: L.palletsAcross,
@@ -273,11 +318,13 @@ export function mixedPlanGeometry(kind: RackKind, M: MixedLayout, frame: PlanFra
   const fromWall = (offsetFt: number) => (s: { start: number; depth: number }): AcrossSpan => (mirrored
     ? { cFt: acrossEndFt - (offsetFt + s.start + s.depth), depthFt: s.depth }
     : { cFt: frame.wallClearanceFt + offsetFt + s.start, depthFt: s.depth });
+  const shared = fromWall(0)({ start: M.stripDepthFt, depth: M.sharedAisleFt });
   return {
     ...g,
     cantilever: cantZone(M.strip, g.alongStartFt, fromWall(0), mirrored),
-    sharedAisle: fromWall(0)({ start: M.stripDepthFt, depth: M.sharedAisleFt }),
-    pallets: palletZone(kind, M.pallets, g.alongStartFt, fromWall(M.stripTotalDepthFt), !mirrored),
+    sharedAisle: shared,
+    // The zone's first rows face the aisle it shares with the strip.
+    pallets: palletZone(kind, M.pallets, g.alongStartFt, fromWall(M.stripTotalDepthFt), !mirrored, [shared]),
     // Both zones break at the same feet; the pallet zone's are the floor's.
     crossAisles: crossAislesOf(g.alongStartFt, M.pallets.crossAisleAtFt, M.pallets.crossAisleWidthFt),
   };

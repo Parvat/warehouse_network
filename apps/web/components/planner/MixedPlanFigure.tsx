@@ -6,7 +6,7 @@ import {
   type GeomCantRow, type MixedLayout, type Orientation, type RackKind,
 } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
-import { FigBoxEl, FigExpand, PlanHead, type LegendItem } from './figBox';
+import { FigBoxEl, FigExpand, PlanHead, accessLegend, type LegendItem } from './figBox';
 import {
   centeredCrossAisleFt, floorFraction, planFit, planFrameX, planFrameY, planBox, fitFigure,
   type Extent, type FigBox,
@@ -120,26 +120,55 @@ function MixedPlan(p: MixedPlanProps) {
    *
    * One mark per section of the run, centred on it, pointing into the lane.
    */
+  // The sections of the run between cross aisles, along: one mark each.
+  const sections: { a0: number; a1: number }[] = [];
+  {
+    let seg0 = 0;
+    const starts = L.bayStartsFt;
+    for (let j = 1; j <= starts.length; j++) {
+      const prev = starts[j - 1]!, here = starts[j];
+      if (here === undefined || here - prev > L.bayLengthFt + 0.01) {
+        sections.push({ a0: alongStartFt + starts[seg0]!, a1: alongStartFt + prev + L.bayLengthFt });
+        seg0 = j;
+      }
+    }
+  }
+
   const entry = (cFt: number, thickFt: number, side: -1 | 1) => {
     const cPx = (side < 0 ? cFt * sc - 4 : (cFt + thickFt) * sc + 4);
     const inward = -side;
-    let seg0 = 0;
-    const starts = L.bayStartsFt;
-    for (let j = 0; j <= starts.length; j++) {
-      const prev = starts[j - 1], here = starts[j];
-      const breaks = here === undefined || prev === undefined
-        || here - prev > L.bayLengthFt + 0.01;
-      if (j > 0 && breaks) {
-        const a0 = alongStartFt + starts[seg0]!;
-        const a1 = alongStartFt + prev! + L.bayLengthFt;
-        const o = at(((a0 + a1) / 2) * sc, 0, cPx, 0);
-        parts.push(<g key={key++} transform={`translate(${o.x.toFixed(1)} ${o.y.toFixed(1)})`
-          + (vertical ? ' rotate(-90)' : '')}>
-          <path d={`M0 0v${6 * inward}m0 0l-3 ${-3 * inward}m3 ${3 * inward}l3 ${-3 * inward}`}
-            stroke={RED} strokeWidth={1.1} fill="none" />
-        </g>);
-        seg0 = j;
-      }
+    for (const s of sections) {
+      const o = at(((s.a0 + s.a1) / 2) * sc, 0, cPx, 0);
+      parts.push(<g key={key++} transform={`translate(${o.x.toFixed(1)} ${o.y.toFixed(1)})`
+        + (vertical ? ' rotate(-90)' : '')}>
+        <path d={`M0 0v${6 * inward}m0 0l-3 ${-3 * inward}m3 ${3 * inward}l3 ${-3 * inward}`}
+          stroke={RED} strokeWidth={1.1} fill="none" />
+      </g>);
+    }
+  };
+
+  /**
+   * The way a flow lane runs, as the pallet-only plan draws it: a ring at the
+   * load end, the head at the pick end, inside the block. `load` -1 is the
+   * block's near end across the rows, +1 its far end.
+   */
+  const flowMark = (cFt: number, thickFt: number, load: -1 | 1) => {
+    const inset = Math.min(3, (thickFt * sc) / 4);
+    const loadPx = load < 0 ? cFt * sc + inset : (cFt + thickFt) * sc - inset;
+    const pickPx = load < 0 ? (cFt + thickFt) * sc - inset : cFt * sc + inset;
+    for (const s of sections) {
+      const aPx = ((s.a0 + s.a1) / 2) * sc;
+      const p0 = at(aPx, 0, loadPx, 0), p1 = at(aPx, 0, pickPx, 0);
+      const dx = p1.x - p0.x, dy = p1.y - p0.y, len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;
+      const head = `M${(p1.x - ux * 3 - uy * 2.4).toFixed(1)} ${(p1.y - uy * 3 + ux * 2.4).toFixed(1)}`
+        + `L${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`
+        + `L${(p1.x - ux * 3 + uy * 2.4).toFixed(1)} ${(p1.y - uy * 3 - ux * 2.4).toFixed(1)}`;
+      parts.push(<g key={key++} stroke={RED} strokeWidth={1.1} fill="none">
+        <circle cx={p0.x.toFixed(1)} cy={p0.y.toFixed(1)} r={1.6} />
+        <line x1={(p0.x + ux * 1.6).toFixed(1)} y1={(p0.y + uy * 1.6).toFixed(1)} x2={p1.x.toFixed(1)} y2={p1.y.toFixed(1)} />
+        <path d={head} />
+      </g>);
     }
   };
 
@@ -285,6 +314,10 @@ function MixedPlan(p: MixedPlanProps) {
     // lane block whatever else is on the floor. The geometry has already
     // turned the layout's front and back into this floor's near and far.
     for (const end of b.openEnds) entry(b.cFt, b.depthFt, end === 'near' ? -1 : 1);
+    if (b.flow) flowMark(b.cFt, b.depthFt, b.flow.load === 'near' ? -1 : 1);
+    // push-back is loaded and picked from its aisle face — here, the first
+    // rows' face is the aisle they share with the strip
+    if (b.face) entry(b.cFt, b.depthFt, b.face === 'near' ? -1 : 1);
   }
   // A flue is the gap between the two rows of a back-to-back pair, so it
   // exists exactly where those rows exist — per bay, never through a cross
@@ -407,14 +440,10 @@ function MixedPlan(p: MixedPlanProps) {
       swatch: <rect x={0.4} y={0.6} width={9.2} height={4.8} fill={FILL} stroke={G} strokeWidth={0.8} />,
     },
   ];
-  // A key names what is drawn: where the pallet zone is lanes, the access marks
-  // are on the plan and belong in it.
-  if (R.pick === 'lane') {
-    legend.push({
-      label: 'TRUCK ENTRY',
-      swatch: <path d="M5 0.4v5.2m0 0l-2.4 -2.4m2.4 2.4l2.4 -2.4" stroke={RED} strokeWidth={1.1} fill="none" />,
-    });
-  }
+  // A key names what is drawn: where the pallet zone is reached through its
+  // lanes or from a face, the access marks are on the plan and belong in it.
+  const access = accessLegend(geom.pallets?.access);
+  if (access) legend.push(access);
 
   return (
     <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={<PlanHead lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} legend={legend} />}

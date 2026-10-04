@@ -204,3 +204,82 @@ test('cantilever heights: an arm per level, under the top of the tower', () => {
   assert.ok(h.armTopFt.every((y) => y > h.baseHeightFt && y <= h.towerHeightFt + 1e-9));
 });
 
+/* ── how each lane type is reached ─────────────────────────────────────── */
+
+const accessFloor = (kind: RackKind, orientation: Orientation, mixed: boolean) => {
+  if (!mixed) {
+    const L = rack(kind, 240, 160, orientation);
+    return palletPlanGeometry(kind, L, { buildingLengthFt: 240, buildingWidthFt: 160, wallClearanceFt: WALL, orientation });
+  }
+  const M = layoutMixed({
+    buildingLengthFt: 240, buildingWidthFt: 160, clearHeightFt: 28, wallClearanceFt: WALL, orientation,
+    cantilever: { linearFeetNeededFt: 300, productLengthFt: 20, armLengthIn: 48, armSpacingIn: 24 },
+    pallet: { kind, beamLengthIn: 96, palletsPerBay: 2, levels: 4, frameDepthIn: 42, aisleWidthFt: 12.5, palletWidthIn: 40 },
+  });
+  return mixedPlanGeometry(kind, M, { buildingLengthFt: 240, buildingWidthFt: 160, wallClearanceFt: WALL, orientation });
+};
+const each = (fn: (kind: RackKind, label: string, g: PlanGeometry) => void, kinds: RackKind[]) => {
+  for (const kind of kinds) for (const orientation of ORIENTS) for (const mixed of [false, true]) {
+    fn(kind, `${kind} ${mixed ? 'mixed' : 'alone'} rows ${orientation}`, accessFloor(kind, orientation, mixed));
+  }
+};
+/** The aisles a band can face: its zone's own, and the shared one. */
+const aislesOf = (g: PlanGeometry) => [...g.pallets!.aisles, ...(g.sharedAisle ? [g.sharedAisle] : [])];
+const touchesAisle = (g: PlanGeometry, x: number) =>
+  aislesOf(g).some((a) => Math.abs(a.cFt - x) < 0.01 || Math.abs(a.cFt + a.depthFt - x) < 0.01);
+
+test('drive-in: one entry, at the open end; drive-through: both ends', () => {
+  each((kind, label, g) => {
+    const Z = g.pallets!;
+    assert.equal(Z.access, 'entry', label);
+    assert.ok(Z.bands.length > 0, `${label}: blocks`);
+    for (const b of Z.bands) {
+      assert.equal(b.openEnds.length, kind === 'drivein' ? 1 : 2, `${label}: entries`);
+      assert.equal(b.flow, undefined);
+      assert.equal(b.face, undefined);
+      // the open end has an aisle in front of it
+      for (const end of b.openEnds) {
+        assert.ok(touchesAisle(g, end === 'near' ? b.cFt : b.cFt + b.depthFt), `${label}: an aisle at the ${end} end`);
+      }
+    }
+  }, ['drivein', 'drivethru']);
+});
+
+test('pallet flow: loaded at one end, picked at the other, picks sharing an aisle', () => {
+  each((_kind, label, g) => {
+    const Z = g.pallets!;
+    assert.equal(Z.access, 'flow', label);
+    assert.ok(Z.bands.length > 0, `${label}: blocks`);
+    for (const b of Z.bands) {
+      assert.deepEqual(b.openEnds, [], `${label}: no truck entry into a flow lane`);
+      assert.ok(b.flow && b.flow.load !== b.flow.pick, `${label}: load and pick at opposite ends`);
+      assert.ok(touchesAisle(g, b.flow!.pick === 'near' ? b.cFt : b.cFt + b.depthFt), `${label}: picked from an aisle`);
+      assert.ok(touchesAisle(g, b.flow!.load === 'near' ? b.cFt : b.cFt + b.depthFt), `${label}: loaded from an aisle`);
+    }
+    // neighbours run opposite ways, so they pick into the aisle between them
+    const sorted = [...Z.bands].sort((p, q) => p.cFt - q.cFt);
+    for (let i = 1; i < sorted.length; i++) {
+      assert.notEqual(sorted[i]!.flow!.pick, sorted[i - 1]!.flow!.pick, `${label}: neighbours alternate`);
+    }
+  }, ['flow']);
+});
+
+test('push-back: worked from the aisle face, never the flue or the wall', () => {
+  each((_kind, label, g) => {
+    const Z = g.pallets!;
+    assert.equal(Z.access, 'face', label);
+    assert.ok(Z.bands.length > 0, `${label}: rows`);
+    for (const b of Z.bands) {
+      assert.deepEqual(b.openEnds, [], label);
+      assert.ok(b.face, `${label}: a row at ${b.cFt.toFixed(1)} has a face`);
+      assert.ok(touchesAisle(g, b.face === 'near' ? b.cFt : b.cFt + b.depthFt), `${label}: the face is on an aisle`);
+    }
+  }, ['pushback']);
+});
+
+test('selective has no access marks', () => {
+  each((_kind, label, g) => {
+    assert.equal(g.pallets!.access, undefined, label);
+    for (const b of g.pallets!.bands) assert.ok(!b.flow && !b.face && b.openEnds.length === 0, label);
+  }, ['selective']);
+});

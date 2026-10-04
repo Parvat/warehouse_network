@@ -7,7 +7,7 @@ import {
 } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
 import { detailFor, simplifiedNote, type Detail } from './detail';
-import { FigBoxEl, FigExpand, PlanHead, type LegendItem } from './figBox';
+import { FigBoxEl, FigExpand, PlanHead, accessLegend, type LegendItem } from './figBox';
 import {
   centeredCrossAisleFt, floorFraction, planFit, planFrameX, planFrameY, planBox, fitFigure,
   type Extent, type FigBox,
@@ -268,6 +268,32 @@ function PlanFigure(p: PlanFigureProps) {
     }
   };
 
+  /**
+   * The way a flow lane runs: a ring at the end it is loaded from, the head at
+   * the end it is picked from, and the line between them the way the pallets
+   * roll. Inside the block rather than standing off it — nothing drives in.
+   * `load` -1 is the block's near end across the rows, +1 its far end.
+   */
+  const flowMark = (cFt: number, thickFt: number, load: -1 | 1) => {
+    const inset = Math.min(3, (thickFt * sc) / 4);
+    const loadPx = load < 0 ? cFt * sc + inset : (cFt + thickFt) * sc - inset;
+    const pickPx = load < 0 ? (cFt + thickFt) * sc - inset : cFt * sc + inset;
+    for (const s of segments) {
+      const aPx = ((s.a0 + s.a1) / 2) * sc;
+      const p0 = at(aPx, 0, loadPx, 0), p1 = at(aPx, 0, pickPx, 0);
+      const dx = p1.x - p0.x, dy = p1.y - p0.y, len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len, uy = dy / len;
+      const head = `M${(p1.x - ux * 3 - uy * 2.4).toFixed(1)} ${(p1.y - uy * 3 + ux * 2.4).toFixed(1)}`
+        + `L${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`
+        + `L${(p1.x - ux * 3 + uy * 2.4).toFixed(1)} ${(p1.y - uy * 3 - ux * 2.4).toFixed(1)}`;
+      parts.push(<g key={key++} stroke={RED} strokeWidth={1.1} fill="none">
+        <circle cx={p0.x.toFixed(1)} cy={p0.y.toFixed(1)} r={1.6} />
+        <line x1={(p0.x + ux * 1.6).toFixed(1)} y1={(p0.y + uy * 1.6).toFixed(1)} x2={p1.x.toFixed(1)} y2={p1.y.toFixed(1)} />
+        <path d={head} />
+      </g>);
+    }
+  };
+
   // The legend shows a flue swatch, so the strip itself is called out — once,
   // on the first one, in the aisle dimension's style.
   let flueLabelled = false;
@@ -292,7 +318,11 @@ function PlanFigure(p: PlanFigureProps) {
   // geometry the 3D view stands its racking on, so the two cannot disagree.
   const Z = geom.pallets!;
   if (R.pick === 'aisle') {
-    for (const b of Z.bands) band(b.cFt, b.depthFt, b.deep);
+    for (const b of Z.bands) {
+      band(b.cFt, b.depthFt, b.deep);
+      // push-back is loaded and picked from the one face on its aisle
+      if (b.face) entry(b.cFt, b.depthFt, b.face === 'near' ? -1 : 1);
+    }
     // A flue is the gap between the two rows of a back-to-back pair, drawn at
     // least a hairline wide so it reads at any scale, centred on where it is.
     if (flue > 0 && d.bays) {
@@ -321,6 +351,7 @@ function PlanFigure(p: PlanFigureProps) {
       // Where this block is worked from, as the layout says it is — read off
       // the geometry, never worked out from which side the wall is on.
       for (const end of b.openEnds) entry(b.cFt, b.depthFt, end === 'near' ? -1 : 1);
+      if (b.flow) flowMark(b.cFt, b.depthFt, b.flow.load === 'near' ? -1 : 1);
     });
   }
 
@@ -418,12 +449,9 @@ function PlanFigure(p: PlanFigureProps) {
     label: 'RACK',
     swatch: <rect x={0.4} y={0.6} width={9.2} height={4.8} fill={FILL} stroke={G} strokeWidth={0.8} />,
   }];
-  if (R.pick === 'lane') {
-    legend.push({
-      label: 'TRUCK ENTRY',
-      swatch: <path d="M5 0.4v5.2m0 0l-2.4 -2.4m2.4 2.4l2.4 -2.4" stroke={RED} strokeWidth={1.1} fill="none" />,
-    });
-  } else if (flueFt > 0 && drew.detail?.bays) {
+  const access = accessLegend(geom.pallets?.access);
+  if (access) legend.push(access);
+  if (R.pick !== 'lane' && flueFt > 0 && drew.detail?.bays) {
     legend.push({ label: 'FLUE', swatch: <rect x={0.4} y={0.6} width={9.2} height={4.8} fill={Y} /> });
   }
 
