@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  layoutMixed, layoutRack, mixedPlanGeometry, palletPlanGeometry,
+  WALL_CLEARANCE_FT, layoutMixed, layoutRack, mixedPlanGeometry, palletPlanGeometry,
   type MixedInput, type Orientation, type RackKind, type RackLayout, type RackLayoutInput,
 } from '../src/index.js';
 
@@ -13,7 +13,8 @@ import {
  * an aisle and a single or more.
  */
 
-const WALL = 2.5, AISLE = 12.5, FD = 42 / 12;
+/** The planner's own clearance: racks stand against the wall, 3 in off it. */
+const WALL = WALL_CLEARANCE_FT, AISLE = 12.5, FD = 42 / 12;
 const KINDS: readonly RackKind[] = ['selective', 'doubledeep', 'pushback'];
 const ORIENTS: readonly Orientation[] = ['length', 'width'];
 
@@ -60,7 +61,7 @@ const mixedInput = (orientation: Orientation, kind: RackKind = 'selective', aisl
   pallet: { kind, beamLengthIn: 96, palletsPerBay: 2, levels: 4, frameDepthIn: 42, aisleWidthFt: aisle, palletWidthIn: 40 },
 });
 
-test('mixed 240 x 120, the screenshot: the last pallet row is on the far wall, the rest spare', () => {
+test('mixed 240 x 120, the screenshot: the last pallet row 3 in off the far wall, ten rows where there were nine', () => {
   const M = layoutMixed(mixedInput('length'));
   const g = mixedPlanGeometry('selective', M, { buildingLengthFt: 240, buildingWidthFt: 120, wallClearanceFt: WALL, orientation: 'length' });
   const bands = [...g.pallets!.bands].sort((a, b) => a.cFt - b.cFt);
@@ -68,11 +69,12 @@ test('mixed 240 x 120, the screenshot: the last pallet row is on the far wall, t
   assert.ok(Math.abs(last.cFt + last.depthFt - (g.acrossFt - WALL)) < 1e-6,
     `the last pallet row ends ${(g.acrossFt - WALL - last.cFt - last.depthFt).toFixed(1)} ft from the far wall`);
   assert.ok(M.pallets.spareFt < AISLE + single(M.pallets) - 1e-6, `${M.pallets.spareFt.toFixed(1)} ft unused`);
-  // 12 ft is left after the pairs: less than an aisle and a single (16 ft), so
-  // a row there could not be reached — it is spare in front of the far row,
-  // and the count is what it was.
-  assert.equal(M.pallets.singleRows, 0);
-  assert.equal(M.pallets.rows, oldRows(M.pallets, 1), `${M.pallets.rows} rows against ${oldRows(M.pallets, 1)} before`);
+  // With racks against the walls the zone gains 4.5 ft across, and what is
+  // left after the pairs holds an aisle and a single: one more row. Nine rows
+  // at 2.5 ft clearance on the old packing, ten now.
+  assert.equal(M.pallets.singleRows, 1, 'the extra single');
+  assert.equal(M.pallets.rows, 10, `${M.pallets.rows} pallet rows`);
+  assert.equal(M.pallets.rows, oldRows(M.pallets, 1) + 1);
   // the first module faces the shared aisle directly, no aisle added
   assert.ok(Math.abs(bands[0]!.cFt - (g.sharedAisle!.cFt + g.sharedAisle!.depthFt)) < 1e-6,
     'the first pallet row starts at the shared aisle');

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  BOX_STRIDE, cantileverHeights, cantileverPlanGeometry, layoutCantileverRuns, layoutMixed, layoutRack,
+  WALL_CLEARANCE_FT, BOX_STRIDE, cantileverHeights, cantileverPlanGeometry, layoutCantileverRuns, layoutMixed, layoutRack,
   mixedPlanGeometry, palletHeights, palletPlanGeometry, solve, warehouseScene,
   type EngineInput, type Orientation, type RackKind,
 } from '../src/index.js';
@@ -13,7 +13,7 @@ import {
  * the building.
  */
 
-const WALL = 2.5;
+const WALL = WALL_CLEARANCE_FT;
 const count = (a: number[]) => a.length / BOX_STRIDE;
 
 /** A 96 in beam, two pallets a bay — the spec the sheet starts from. */

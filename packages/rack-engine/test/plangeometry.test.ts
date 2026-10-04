@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  cantileverHeights, cantileverPlanGeometry, layoutCantileverRuns, layoutMixed, layoutRack,
+  WALL_CLEARANCE_FT, cantileverHeights, cantileverPlanGeometry, layoutCantileverRuns, layoutMixed, layoutRack,
   mixedPlanGeometry, palletPlanGeometry, rackType,
   type CantileverRunInput, type MixedInput, type Orientation, type PlanGeometry,
   type RackKind, type RackLayoutInput,
@@ -15,7 +15,7 @@ import {
  * read it from here instead.
  */
 
-const WALL = 2.5;
+const WALL = WALL_CLEARANCE_FT;
 const SIZES: readonly [number, number][] = [[240, 120], [600, 500]];
 const ORIENTS: readonly Orientation[] = ['length', 'width'];
 

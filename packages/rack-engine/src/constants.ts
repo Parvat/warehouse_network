@@ -41,6 +41,14 @@ export const SPRINKLER_CLEARANCE_IN = { ceiling: 36, 'in-rack': 18 } as const;
 /** Clear space assumed between the dock wall and the first rack row, ft. */
 export const DOCK_APRON_FT = 12;
 
+/**
+ * Rack to wall, ft: 3 in at most. A row against a wall stands against it — the
+ * gap is what it takes to stand a frame square to the wall, not a walkway —
+ * on every wall, whichever way the rows run, on a floor of racking alone or a
+ * mixed one, cantilever as well as pallet. Confirmed; see docs/open-questions.md.
+ */
+export const WALL_CLEARANCE_FT = 0.25;
+
 /** Headroom above the top arm of a cantilever row, in. */
 export const LONG_HEAD_CLEARANCE_IN = 24;
 

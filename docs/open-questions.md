@@ -4,6 +4,18 @@ Figures Trace uses that a dealer or engineer has to confirm. Each one is a
 working assumption: the arithmetic is right, the number in it is a guess made
 carefully rather than measured.
 
+## Wall clearance — 3 in — confirmed
+
+`WALL_CLEARANCE_FT` in `packages/rack-engine/src/constants.ts`.
+
+Racks stand against the wall with at most **3 in** between the frame and the
+wall — on every wall, whichever way the rows run, on a floor of racking alone
+or a mixed one, and for cantilever towers as well as pallet frames. It was a
+working **2.5 ft** assumption until confirmed; the 4.5 ft it gives back across
+a building is enough to add a row on many floors (a mixed 240 × 120 goes from
+nine pallet rows to ten). No longer an open question — kept here so the change
+from the assumed figure is on record.
+
 ## Drive-in lane clearance — 8 in
 
 `LANE_CLEARANCE_IN` in `packages/rack-engine/src/constants.ts`.

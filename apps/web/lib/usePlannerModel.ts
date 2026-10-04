@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   AVAILABLE_THREE_QUARTERS, BEAM_LENGTHS_IN,
-  CANTILEVER_PRODUCT_FT, DOCK_APRON_FT, FLUE_IN, armLengthForProduct, ftIn,
+  CANTILEVER_PRODUCT_FT, DOCK_APRON_FT, FLUE_IN, WALL_CLEARANCE_FT, armLengthForProduct, ftIn,
   RACK_TYPES, TRUCK_AISLE_RANGE_FT, TRUCK_LABEL,
   buildingSizeCheck, envelopeChecks, isTruckKind, truckAisleCheck, truckAisleFt,
   cantileverChecks, cantileverLevels, compareRackTypes,
@@ -111,7 +111,6 @@ const DEFAULT_CONFIG: ConfigDraft = {
   orientation: 'length', truck: 'counterbalance',
   priority: 'cantilever',
 };
-const WALL_CLEARANCE_FT = 2.5;
 const DEFAULT_ARM_SPACING_IN = 24;
 
 const isKind = (v: string | undefined): v is RackKind =>
