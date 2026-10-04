@@ -87,7 +87,9 @@ test('an aisle-picked row holds its depth — the bug that made double-deep look
 test('the row against a wall is single — nobody reaches the far side of a pair', () => {
   const l = layoutRack('selective', bldg);
   assert.equal(l.wallRows, 2);
-  assert.equal((l.rows - l.wallRows) % 2, 0, 'everything else is back-to-back pairs');
+  assert.ok(l.singleRows === 0 || l.singleRows === 1, 'at most one single that is not on a wall');
+  assert.equal((l.rows - l.wallRows - l.singleRows) % 2, 0,
+    'everything else is back-to-back pairs — plus one single where the depth left over holds it');
 });
 
 test('drive-through pays for its second aisle', () => {

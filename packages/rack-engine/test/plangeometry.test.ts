@@ -47,25 +47,32 @@ function assertNoOverlap(g: PlanGeometry, label: string) {
 }
 
 /**
- * The across-the-floor walk the pallet plan used to make for itself: a wall
- * row, then pairs with a flue between, an aisle after each — or lane blocks,
- * an aisle between. Kept here as the independent reference.
+ * The packing rule, worked out here on its own as the reference: a single row
+ * hard against the far wall, a single against the near wall, back-to-back
+ * pairs between with an aisle each, and one more single if the depth left
+ * over holds a single and its aisle — what is left after that is spare. Lane
+ * blocks: an aisle between each, and at each end of a drive-through.
  */
-function oldPalletWalk(kind: RackKind, L: ReturnType<typeof rack>) {
+function packingWalk(kind: RackKind, L: ReturnType<typeof rack>) {
   const R = rackType(kind);
   const fd = 42 / 12, flue = R.pick === 'lane' ? 0 : L.flueIn / 12, aisle = 12.5, deep = L.deep;
   const bands: { cFt: number; depthFt: number }[] = [];
   let c = WALL + L.acrossOffsetFt;
   if (R.pick === 'aisle') {
     const single = deep * fd, pair = deep * fd * 2 + flue;
-    if (L.wallRows > 0) { bands.push({ cFt: c, depthFt: single }); c += single + aisle; }
-    const pairs = (L.rows - L.wallRows) / 2;
+    const across = L.acrossFt - L.acrossOffsetFt;
+    const farWall = WALL + L.acrossFt;
+    const room = across - single - (single + aisle);
+    const pairs = Math.floor(room / (pair + aisle) + 1e-9);
+    const extra = room - pairs * (pair + aisle) >= single + aisle - 1e-9;
+    bands.push({ cFt: c, depthFt: single }); c += single + aisle;
+    if (extra) { bands.push({ cFt: c, depthFt: single }); c += single + aisle; }
     for (let i = 0; i < pairs; i++) {
       bands.push({ cFt: c, depthFt: deep * fd });
       bands.push({ cFt: c + deep * fd + flue, depthFt: deep * fd });
       c += pair + aisle;
     }
-    if (L.wallRows > 1) bands.push({ cFt: c, depthFt: single });
+    bands.push({ cFt: farWall - single, depthFt: single });
   } else {
     const block = deep * fd;
     if (R.openEnds === 2) c += aisle;
@@ -91,9 +98,9 @@ for (const kind of ['selective', 'drivein'] as const) {
         assert.equal(Z.aisles.length, L.aislesFt.length, `${label}: every aisle`);
         assert.deepEqual(Z.bayStartsFt, L.bayStartsFt.map((b) => g.alongStartFt + b), `${label}: the layout's bays`);
         assert.deepEqual(g.crossAisles.map((a) => a.aFt), L.crossAisleAtFt.map((a) => g.alongStartFt + a));
-        // the walk the plan used to make, band for band
-        const walk = oldPalletWalk(kind, L);
-        assert.equal(Z.bands.length, walk.length, `${label}: band count against the old walk`);
+        // the packing rule, band for band
+        const walk = packingWalk(kind, L);
+        assert.equal(Z.bands.length, walk.length, `${label}: band count against the rule`);
         Z.bands.forEach((b, i) => {
           assert.ok(Math.abs(b.cFt - walk[i]!.cFt) < 1e-6 && Math.abs(b.depthFt - walk[i]!.depthFt) < 1e-6,
             `${label}: band ${i} at ${b.cFt} (${b.depthFt}) against ${walk[i]!.cFt} (${walk[i]!.depthFt})`);
@@ -225,8 +232,12 @@ const each = (fn: (kind: RackKind, label: string, g: PlanGeometry) => void, kind
 };
 /** The aisles a band can face: its zone's own, and the shared one. */
 const aislesOf = (g: PlanGeometry) => [...g.pallets!.aisles, ...(g.sharedAisle ? [g.sharedAisle] : [])];
-const touchesAisle = (g: PlanGeometry, x: number) =>
-  aislesOf(g).some((a) => Math.abs(a.cFt - x) < 0.01 || Math.abs(a.cFt + a.depthFt - x) < 0.01);
+const meets = (spans: readonly { cFt: number; depthFt: number }[], x: number) =>
+  spans.some((a) => Math.abs(a.cFt - x) < 0.01 || Math.abs(a.cFt + a.depthFt - x) < 0.01);
+/** An aisle at x — or spare floor at x that itself opens onto an aisle. */
+const touchesAisle = (g: PlanGeometry, x: number) => meets(aislesOf(g), x)
+  || g.pallets!.spare.some((sp) => meets([sp], x)
+    && (meets(aislesOf(g), sp.cFt) || meets(aislesOf(g), sp.cFt + sp.depthFt)));
 
 test('drive-in: one entry, at the open end; drive-through: both ends', () => {
   each((kind, label, g) => {

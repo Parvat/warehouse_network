@@ -107,7 +107,15 @@ export interface RackLayout {
   rows: number;
   /** Lane blocks — zero for aisle-picked types. */
   blocks: number;
+  /** Single rows against a wall — the far wall always, the near wall alone. */
   wallRows: number;
+  /**
+   * Single rows that are not against a wall: the one extra row the depth left
+   * over takes when it would hold a single and its aisle. Zero or one.
+   */
+  singleRows: number;
+  /** Floor across the zone no row or aisle takes, from the wall line. */
+  spareAcrossFt: readonly { start: number; depth: number }[];
   positions: number;
   bayLengthFt: number;
   /**
@@ -342,6 +350,7 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
 
   return {
     deep, bays: best.bays, rows: best.rows, blocks: best.blocks, wallRows: best.wallRows,
+    singleRows: best.singleRows, spareAcrossFt: best.spare,
     blockAccess,
     positions, bayLengthFt,
     laneWidthFt: lanes ? bayLengthFt : undefined,
@@ -401,7 +410,7 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
 
   function trial(alongOffsetFt: number, acrossOffsetFt: number) {
     const across = acrossFt - acrossOffsetFt;
-    const { rows, blocks, wallRows, usedFt, bands, flues, aisles } = stack(across, acrossOffsetFt, deep);
+    const { rows, blocks, wallRows, singleRows, usedFt, bands, flues, aisles, spare } = stack(across, acrossOffsetFt, deep);
     // Bays are counted from what the segments actually hold: nothing straddles
     // a cross aisle, so a segment's remainder is spare floor rather than a bay.
     const { bayStartsFt, crossAisleAtFt, bays } =
@@ -419,7 +428,7 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
     const penalty = columns.reduce((sum, c) => sum + COLUMN_PENALTY[c.where], 0);
     const netBays = Math.max(0, rows * bays - baysLost);
     return {
-      alongOffsetFt, acrossOffsetFt, bays, rows, blocks, wallRows, usedFt,
+      alongOffsetFt, acrossOffsetFt, bays, rows, blocks, wallRows, singleRows, spare, usedFt,
       columns, baysLost, bayStartsFt, crossAisleAtFt, penalty, bands, flues, aisles,
       netBays, score: netBays - penalty,
     };
@@ -450,51 +459,56 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
     const aisles: { start: number; depth: number }[] = [];
     /** An aisle taken at `from`, recorded where the cursor spends one. */
     const spend = (from: number) => { aisles.push({ start: from, depth: aisle }); };
-    let rows = 0, blocks = 0, wallRows = 0, usedFt = 0;
+    /** Floor across the zone no row or aisle takes — spare, not a wider aisle. */
+    const spare: { start: number; depth: number }[] = [];
+    let rows = 0, blocks = 0, wallRows = 0, singleRows = 0, usedFt = 0;
     let c = acrossOffsetFt;
 
     if (R.pick === 'aisle') {
       const single = deep * fd;
       const pair = deep * fd * 2 + flue;
-      if (input.wallsAcross === 1) {
-        /*
-         * [pair, aisle] … then the wall row — in that order, because this zone
-         * has a wall at one end only and it is the far one. The near edge is
-         * the aisle it shares with whatever stands on the other side of it,
-         * which belongs to neither zone.
-         *
-         * The counts do not care which way round this is laid; the positions
-         * very much do. Emitted wall-row-first, every band in the zone came
-         * out one aisle and one row-depth adrift of where the mixed plan draws
-         * it, so anything reading a position off this layout — where a column
-         * is standing, most of all — was reading the wrong floor. The drawing
-         * walks in from the strip's wall, so this walks the same way.
-         */
-        const pairs = Math.max(0, Math.floor((across - single) / (pair + aisle)));
-        wallRows = across >= single ? 1 : 0;
-        rows = wallRows + pairs * 2;
-        usedFt = single * wallRows + pairs * (pair + aisle);
-        for (let i = 0; i < pairs; i++) {
-          bands.push({ start: c, depth: deep * fd });
-          flues.push({ start: c + deep * fd, depth: flue });
-          bands.push({ start: c + deep * fd + flue, depth: deep * fd });
-          spend(c + pair); c += pair + aisle;
-        }
-        if (wallRows > 0) bands.push({ start: c, depth: single });
-      } else {
-        const left = across - single * 2 - aisle * 2;
-        const pairs = Math.max(0, Math.floor((left + aisle) / (pair + aisle)));
-        wallRows = across >= single * 2 + aisle ? 2 : across >= single ? 1 : 0;
-        rows = wallRows + pairs * 2;
-        usedFt = single * wallRows + pairs * pair + (pairs + 1) * aisle;
-        if (wallRows > 0) { bands.push({ start: c, depth: single }); spend(c + single); c += single + aisle; }
-        for (let i = 0; i < pairs; i++) {
-          bands.push({ start: c, depth: deep * fd });
-          flues.push({ start: c + deep * fd, depth: flue });
-          bands.push({ start: c + deep * fd + flue, depth: deep * fd });
-          spend(c + pair); c += pair + aisle;
-        }
-        if (wallRows > 1) bands.push({ start: c, depth: single });
+      /*
+       * Far wall first, then the near edge, then pairs between, then one more
+       * single if the depth left over would hold it.
+       *
+       * 1. The far wall always gets a single row, hard against it. Laid in
+       *    from the near side the rows used to stop wherever the count ran
+       *    out, so the far wall stood behind up to twenty feet of nothing.
+       * 2. The near edge is a wall on a floor of racking alone, and it gets
+       *    its own single row. On a mixed floor it is the aisle shared with
+       *    the strip, and the first module faces that aisle directly — the
+       *    aisle is already there, and belongs to neither zone.
+       * 3. Back-to-back pairs fill between, an aisle after each: two rows for
+       *    one aisle, so pairs always beat two singles for the same width.
+       * 4. If what is left is an aisle and a single or more, it takes one more
+       *    single with its aisle rather than being left empty. Less than that
+       *    is spare, recorded as spare in front of the far row — never handed
+       *    to an aisle to make it wider than the truck asked for.
+       */
+      const end = acrossOffsetFt + across;
+      const farRow = across >= single;
+      const nearRow = input.wallsAcross !== 1 && across >= single * 2 + aisle;
+      wallRows = (farRow ? 1 : 0) + (nearRow ? 1 : 0);
+      const room = Math.max(0, across - (farRow ? single : 0) - (nearRow ? single + aisle : 0));
+      const pairs = farRow ? Math.floor(room / (pair + aisle) + 1e-9) : 0;
+      const extra = farRow && room - pairs * (pair + aisle) >= single + aisle - 1e-9;
+      singleRows = extra ? 1 : 0;
+      rows = wallRows + singleRows + pairs * 2;
+
+      if (nearRow) { bands.push({ start: c, depth: single }); spend(c + single); c += single + aisle; }
+      // the extra single sits by the near edge: a wall row's aisle, or the shared one
+      if (extra) { bands.push({ start: c, depth: single }); spend(c + single); c += single + aisle; }
+      for (let i = 0; i < pairs; i++) {
+        bands.push({ start: c, depth: deep * fd });
+        flues.push({ start: c + deep * fd, depth: flue });
+        bands.push({ start: c + deep * fd + flue, depth: deep * fd });
+        spend(c + pair); c += pair + aisle;
+      }
+      if (farRow) {
+        const farStart = end - single;
+        if (farStart - c > 1e-9) spare.push({ start: c, depth: farStart - c });
+        bands.push({ start: farStart, depth: single });
+        usedFt = across - Math.max(0, farStart - c);
       }
     } else {
       const block = deep * fd;
@@ -511,7 +525,7 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
       }
       rows = blocks * deep;
     }
-    return { rows, blocks, wallRows, usedFt, bands, flues, aisles };
+    return { rows, blocks, wallRows, singleRows, usedFt, bands, flues, aisles, spare };
   }
 
 }

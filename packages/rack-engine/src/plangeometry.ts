@@ -77,6 +77,8 @@ export interface GeomPalletZone {
   bands: readonly GeomRackBand[];
   flues: readonly AcrossSpan[];
   aisles: readonly AcrossSpan[];
+  /** Floor no row or aisle takes — spare, in front of the far wall row. */
+  spare: readonly AcrossSpan[];
   /** Where each bay (or lane) starts, along. */
   bayStartsFt: readonly number[];
   bayLengthFt: number;
@@ -196,7 +198,9 @@ function palletZone(
     : lane ? 'entry' : kind === 'pushback' ? 'face' : undefined;
   const front = nearIsFront ? 'near' : 'far', back = nearIsFront ? 'far' : 'near';
   const aisles = L.aislesFt.map(place);
-  const all = [...aisles, ...sharedAisles];
+  const spare = L.spareAcrossFt.map(place);
+  // spare floor is open floor: a face across it still reaches the aisle
+  const all = [...aisles, ...sharedAisles, ...spare];
   const touches = (x: number) => all.some((a) => Math.abs(a.cFt - x) < 0.01 || Math.abs(a.cFt + a.depthFt - x) < 0.01);
 
   const bands: GeomRackBand[] = L.bandsFt.map((b, i) => {
@@ -229,6 +233,7 @@ function palletZone(
     kind, lanes: lane, access, bands,
     flues: L.fluesFt.map(place),
     aisles,
+    spare,
     bayStartsFt: L.bayStartsFt.map((b) => alongStartFt + b),
     bayLengthFt: L.bayLengthFt,
     palletsAcross: L.palletsAcross,

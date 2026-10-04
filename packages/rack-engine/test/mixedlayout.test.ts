@@ -117,7 +117,9 @@ test('the pallet zone edge against the strip is not treated as a wall row', () =
   assert.equal(l.palletsAlone.wallRows, 2, 'the same racking alone has two');
 
   // a wall forces a single row; an aisle takes a full back-to-back pair
-  assert.equal((l.pallets.rows - l.pallets.wallRows) % 2, 0, 'the rest are pairs');
+  assert.ok(l.pallets.singleRows === 0 || l.pallets.singleRows === 1);
+  assert.equal((l.pallets.rows - l.pallets.wallRows - l.pallets.singleRows) % 2, 0,
+    'the rest are pairs, and one single where the depth left over holds it');
   const asIfWalled = layoutRack('selective', {
     buildingLengthFt: 240, buildingWidthFt: 120 - l.stripTotalDepthFt,
     beamLengthIn: 96, palletsPerBay: 2, levels: 5, frameDepthIn: 42,
