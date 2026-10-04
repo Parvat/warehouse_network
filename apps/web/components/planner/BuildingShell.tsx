@@ -1,6 +1,7 @@
 'use client';
 
 import { memo } from 'react';
+import { DOCK_DOORS } from '@trace/rack-engine';
 import { BUILDING_DIM_SCALE, FIG_TEXT, MONO, STROKE, type Extent } from './figText';
 
 /**
@@ -23,9 +24,9 @@ import { BUILDING_DIM_SCALE, FIG_TEXT, MONO, STROKE, type Extent } from './figTe
 
 const Y = '#F2C230', MUT = '#6B726C', BLUE = '#1B4FD8', INK = '#1A1D1B';
 
-/** Where the dock doors start along their wall, and how long each is, as fractions of it. */
-const DOCKS = [0.18, 0.5, 0.82] as const;
-const DOCK_LEN = 0.11;
+/** Where the dock doors stand on their wall — the engine's, so the 3D doors agree. */
+const DOCKS = DOCK_DOORS.starts;
+const DOCK_LEN = DOCK_DOORS.length;
 const STAGING = 'STAGING';
 
 /**

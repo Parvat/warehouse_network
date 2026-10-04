@@ -14,7 +14,11 @@ import {
   usePlannerModel,
   type PlannerHandoff, type TypeCell,
 } from '@/lib/usePlannerModel';
-import { BUILDING_FT, ftIn } from '@trace/rack-engine';
+import {
+  BUILDING_FT, cantileverHeights, cantileverPlanGeometry, ftIn, mixedPlanGeometry, palletHeights,
+  palletPlanGeometry, warehouseScene,
+} from '@trace/rack-engine';
+import { ThreeDView } from './planner/ThreeDView';
 
 
 export type { PlannerHandoff } from '@/lib/usePlannerModel';
@@ -151,6 +155,34 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
     ? (tab === 'all' ? m.flags : [])
     : m.flags.filter((f) => f.severity === tab);
   const showsTrade = tab === 'all' || tab === 'context';
+
+  /*
+   * The 3D view of this floor, beside the plan's expand icon.
+   *
+   * Built from the same engine geometry the plan draws and the heights the
+   * elevation draws, and only when it is opened — nothing here places a rack.
+   */
+  const frame3d = {
+    buildingLengthFt: building.lengthFt, buildingWidthFt: building.widthFt,
+    wallClearanceFt: m.wallClearanceFt, orientation: m.config.orientation,
+  };
+  const threeD = (
+    <ThreeDView
+      title={`3D VIEW — ${building.lengthFt} × ${building.widthFt} FT · `
+        + (isMixed ? 'MIXED' : isLong ? 'CANTILEVER' : m.type.name.toUpperCase())}
+      makeScene={() => warehouseScene(
+        isMixed ? mixedPlanGeometry(m.kind, mixed, frame3d)
+          : isLong ? cantileverPlanGeometry(runs, frame3d)
+          : palletPlanGeometry(m.kind, layout, frame3d),
+        {
+          clearHeightFt: building.clearHeightFt,
+          pallet: isLong ? undefined : palletHeights(m.kind, spec, {
+            widthIn: m.pallet.widthIn, depthIn: m.pallet.depthIn, loadHeightIn: m.pallet.loadHeightIn,
+          }),
+          cantilever: isMixed ? cantileverHeights(mixed.strip) : isLong ? cantileverHeights(runs) : undefined,
+        },
+      )} />
+  );
 
   return (
     <div className="a3">
@@ -313,18 +345,18 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                   buildingLengthFt={building.lengthFt} buildingWidthFt={building.widthFt}
                   frameDepthIn={spec.frameDepthIn} flueIn={layout.flueIn}
                   aisleFt={m.aisleFt} wallClearanceFt={m.wallClearanceFt}
-                  orientation={m.config.orientation} boxClass="pl" />
+                  orientation={m.config.orientation} boxClass="pl" tool={threeD} />
               ) : isLong ? (
                 <CantileverPlanFigure layout={runs} box={planBox()}
                   buildingLengthFt={building.lengthFt} buildingWidthFt={building.widthFt}
                   aisleFt={m.aisleFt} wallClearanceFt={m.wallClearanceFt}
-                  orientation={m.config.orientation} boxClass="pl" />
+                  orientation={m.config.orientation} boxClass="pl" tool={threeD} />
               ) : (
                 <PlanFigure kind={m.kind} layout={layout} box={planBox()}
                   buildingLengthFt={building.lengthFt} buildingWidthFt={building.widthFt}
                   frameDepthIn={spec.frameDepthIn} flueIn={layout.flueIn}
                   aisleFt={m.aisleFt} wallClearanceFt={m.wallClearanceFt}
-                  orientation={m.config.orientation} boxClass="pl" />
+                  orientation={m.config.orientation} boxClass="pl" tool={threeD} />
               )}
 
               {isMixed ? (

@@ -2,7 +2,8 @@
 
 import { memo } from 'react';
 import {
-  DOCK_APRON_FT, rackType, type MixedLayout, type Orientation, type RackKind,
+  DOCK_APRON_FT, mixedPlanGeometry, rackType,
+  type GeomCantRow, type MixedLayout, type Orientation, type RackKind,
 } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
 import { FigBoxEl, FigExpand, PlanHead, type LegendItem } from './figBox';
@@ -20,10 +21,11 @@ import {
  * ticks for the strip, pale bands with bay ticks and a yellow flue for the
  * racking — because the reader has to see two systems, not one hybrid.
  *
- * Everything here is placed from a single cursor that walks in from the strip's
- * wall, so the two zones cannot drift apart: the strip's rows, its own aisles,
- * the shared aisle and then the pallet bands all come off the same running
- * total the engine used to divide the width.
+ * Everything here is placed from the engine's geometry for this floor, walked in
+ * from the strip's wall, so the two zones cannot drift apart: the strip's rows,
+ * its own aisles, the shared aisle and then the pallet bands all come off the
+ * same placement the engine used to divide the width — and that the 3D view
+ * stands its racking on.
  */
 
 const G = '#14392B', ARM = '#1D5340', FILL = '#E8EFEA',
@@ -33,6 +35,8 @@ const G = '#14392B', ARM = '#1D5340', FILL = '#E8EFEA',
 export interface MixedPlanProps {
   /** Which of the row's boxes this is. */
   boxClass?: string;
+  /** A control beside the expand icon in the figure's corner — the 3D view. */
+  tool?: React.ReactNode;
   mixed: MixedLayout;
   kind: RackKind;
   buildingLengthFt: number;
@@ -62,6 +66,12 @@ function MixedPlan(p: MixedPlanProps) {
   // 400 x 100 shed as in a square one. The viewBox is fitted afterwards.
   const vertical = p.orientation === 'width';
   const apron = DOCK_APRON_FT * sc;
+  // Where every row, aisle and band on this floor stands — the engine's,
+  // shared with the 3D view.
+  const geom = mixedPlanGeometry(p.kind, M, {
+    buildingLengthFt: p.buildingLengthFt, buildingWidthFt: p.buildingWidthFt,
+    wallClearanceFt: p.wallClearanceFt, orientation: p.orientation,
+  });
 
   const fit = fitFigure(p.box ?? planBox(true), (fAnno, ext, widthPx) => {
   measureShell(ext, {
@@ -133,35 +143,25 @@ function MixedPlan(p: MixedPlanProps) {
     }
   };
 
-  /* The cursor walks in from the strip's wall along the across axis, so the two
-     zones cannot drift apart. The strip stays on the side the customer chose
-     whichever way the rows run — 'top' is the start of that axis, which is the
-     top wall for rows along the length and the left wall for rows across it. */
+  /* Every row, the aisle they share and every pallet band come from the
+     engine's geometry for this floor — walked in from the strip's wall, and
+     the same placement the 3D view stands its racking on. The strip stays on
+     the side the customer chose whichever way the rows run — 'top' is the start
+     of that axis, which is the top wall for rows along the length and the left
+     wall for rows across it. */
   const dir = M.wall === 'top' ? 1 : -1;
   const acrossEndFt = (vertical ? p.buildingLengthFt : p.buildingWidthFt) - p.wallClearanceFt;
-  let cursor = M.wall === 'top' ? p.wallClearanceFt : acrossEndFt;
-  const take = (ft: number) => {
-    const start = dir === 1 ? cursor : cursor - ft;
-    cursor += dir * ft;
-    return start;
-  };
   // No width on each aisle — the run summary says it once for the floor.
 
   /* ── the strip ───────────────────────────────────────────────────────── */
 
-  const armFt = S.armLengthIn / 12;
-
-  const cantRow = (cFt: number, sides: 1 | 2, r: number) => {
-    const depthFt = sides === 2 ? S.doubleDepthFt : S.singleDepthFt;
-    // A wall row is reached only from the aisle, so its column sits on the wall
-    // side and its arms face in; an interior row is armed both ways.
-    const colC = sides === 2 ? cFt + depthFt / 2 : dir === 1 ? cFt : cFt + depthFt;
-    const armC0 = sides === 2 ? colC - armFt : dir === 1 ? colC : colC - armFt;
-    const armC1 = sides === 2 ? colC + armFt : dir === 1 ? colC + armFt : colC;
+  // A wall row is reached only from the aisle, so its column sits on the wall
+  // side and its arms face in; an interior row is armed both ways.
+  const cantRow = (row: GeomCantRow) => {
+    const colC = row.colCFt, armC0 = row.armFromCFt, armC1 = row.armToCFt;
 
     // Only the runs this row carries — see the cantilever plan for why.
-    const lastRow = r === M.cantileverRows - 1;
-    const runsHere = lastRow ? S.runsInLastRow : S.runsPerRow;
+    const runsHere = row.runs;
     for (let run = 0; run < runsHere; run++) {
       const runA = alongStartFt + (S.runStartsFt[run] ?? 0);
       const towerA = runA + S.overhangFt;
@@ -185,17 +185,11 @@ function MixedPlan(p: MixedPlanProps) {
     // own band to put it without sitting on the arms.
   };
 
-  for (let r = 0; r < M.cantileverRows; r++) {
-    const sides: 1 | 2 = r === 0 ? 1 : 2;
-    cantRow(take(sides === 2 ? S.doubleDepthFt : S.singleDepthFt), sides, r);
-    if (r < M.cantileverRows - 1) {
-      take(M.cantileverAisleFt);
-    }
-  }
+  geom.cantilever!.rows.forEach(cantRow);
 
   /* ── the aisle they share ────────────────────────────────────────────── */
 
-  const shC = take(M.sharedAisleFt);
+  const shC = geom.sharedAisle!.cFt;
   const midC = shC + M.sharedAisleFt / 2;
   const divider = seg(0, vertical ? p.buildingWidthFt : p.buildingLengthFt, midC, 0);
   const near = box(alongStartFt, 0, midC, 0);
@@ -244,10 +238,7 @@ function MixedPlan(p: MixedPlanProps) {
 
   /* ── the pallet racking ──────────────────────────────────────────────── */
 
-  const fd = p.frameDepthIn / 12;
   const flue = R.pick === 'lane' ? 0 : p.flueIn / 12;
-  const deep = L.deep;
-  const rackLenFt = L.bays * L.bayLengthFt;
 
   /**
    * A rack band, drawn bay by bay from where the solver put each bay.
@@ -282,71 +273,32 @@ function MixedPlan(p: MixedPlanProps) {
   };
 
   /*
-   * The pallet solver slid its block to clear the columns, and the drawing has
-   * to sit where it put it — the same rule the pallet-only plan follows with
-   * `acrossOffsetFt`, which this walk was missing. Without it the racking was
-   * drawn wherever the cursor happened to arrive, up to a full aisle out of
-   * position: at a 40 ft column grid the whole zone landed 9.5 ft from where
-   * the solver had it, so the plan and the count described different floors,
-   * and a column the solver had tucked into a flue was drawn standing in the
-   * open.
+   * Every band, flue and lane block where the pallet solver put it, including
+   * the slide it took to clear the columns — the geometry carries that offset,
+   * so the zone cannot land a whole aisle out of position the way a cursor
+   * that forgot it once did.
    */
-  take(L.acrossOffsetFt);
-
-  if (R.pick === 'aisle') {
-    const pairs = Math.max(0, (L.rows - L.wallRows) / 2);
-    for (let i = 0; i < pairs; i++) {
-      const c0 = take(deep * fd * 2 + flue);
-      band(c0, deep * fd, deep);
-      const fc = c0 + deep * fd;
-      const fh = Math.max(1.4 / sc, flue);
-      // A flue is the gap between the two rows of a back-to-back pair, so it
-      // exists exactly where those rows exist. Drawn as one strip the length of
-      // the unsplit row it ran on into the cross aisles at one end and was used
-      // up before the far end — the rows were segmented and the flue was not.
-      if (flue > 0) {
-        for (const bs of L.bayStartsFt) {
-          parts.push(<rect key={key++} {...box(alongStartFt + bs, L.bayLengthFt, fc, fh)}
-            fill={Y} />);
-        }
+  const Z = geom.pallets!;
+  for (const b of Z.bands) {
+    band(b.cFt, b.depthFt, b.deep);
+    // The same access marks the pallet-only plan draws: a lane block is a
+    // lane block whatever else is on the floor. The geometry has already
+    // turned the layout's front and back into this floor's near and far.
+    for (const end of b.openEnds) entry(b.cFt, b.depthFt, end === 'near' ? -1 : 1);
+  }
+  // A flue is the gap between the two rows of a back-to-back pair, so it
+  // exists exactly where those rows exist — per bay, never through a cross
+  // aisle — drawn at least a hairline wide, centred on where it is.
+  if (flue > 0) {
+    for (const fl of Z.flues) {
+      const fh = Math.max(1.4 / sc, fl.depthFt);
+      const fc = fl.cFt + (fl.depthFt - fh) / 2;
+      for (const bs of L.bayStartsFt) {
+        parts.push(<rect key={key++} {...box(alongStartFt + bs, L.bayLengthFt, fc, fh)}
+          fill={Y} />);
       }
-      band(fc + fh, deep * fd, deep);
-      take(p.aisleFt);
-    }
-    // the far wall is a real wall, so its row is single
-    if (L.wallRows > 0) {
-      band(take(deep * fd), deep * fd, deep);
-    }
-  } else {
-    const blockFt = deep * fd;
-    if (R.openEnds === 2) take(p.aisleFt);
-    for (let bkt = 0; bkt < L.blocks; bkt++) {
-      const c0 = take(blockFt);
-      band(c0, blockFt, deep);
-      /*
-       * The same access marks the pallet-only plan draws.
-       *
-       * A lane block is a lane block whatever else is on the floor: this zone
-       * had none, so a drive-in strip beside a cantilever run was drawn as
-       * racking nobody could get into.
-       *
-       * The cursor walks in from the strip's wall, so when the strip is on the
-       * far wall it walks backwards and the layout's near end is this
-       * drawing's far edge. The block's own ends are named in the layout's
-       * terms, so the mapping is applied here rather than in what it says.
-       */
-      const frontSide: -1 | 1 = dir === 1 ? -1 : 1;
-      if (R.openEnds === 2) {
-        entry(c0, blockFt, -1);
-        entry(c0, blockFt, 1);
-      } else if (R.openEnds === 1) {
-        entry(c0, blockFt,
-          L.blockAccess[bkt] === 'back' ? (frontSide === -1 ? 1 : -1) : frontSide);
-      }
-      take(p.aisleFt);
     }
   }
-
 
   /* the floor the customer said is not available, and the circulation that
      comes off the run — both are already out of the count, so they are drawn.
@@ -467,10 +419,13 @@ function MixedPlan(p: MixedPlanProps) {
   return (
     <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={<PlanHead lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} legend={legend} />}
       info={(
+        <>
+        {p.tool}
         <FigExpand label={`Plan — ${p.buildingLengthFt} × ${p.buildingWidthFt} ft`}
           viewBox={fit.viewBox} aspect={fit.aspect} refit={fit.refit}>
           {fit.drawn}
         </FigExpand>
+        </>
       )}>
       <svg id="plan" viewBox={fit.viewBox}
         style={{ aspectRatio: String(fit.aspect) }}

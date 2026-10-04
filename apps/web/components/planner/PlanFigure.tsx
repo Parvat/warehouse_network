@@ -2,7 +2,7 @@
 
 import { memo } from 'react';
 import {
-  DOCK_APRON_FT, rackType,
+  DOCK_APRON_FT, palletPlanGeometry, rackType,
   type Orientation, type RackKind, type RackLayout,
 } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
@@ -43,6 +43,8 @@ const G = '#14392B', FILL = '#E8EFEA', Y = '#F2C230', RED = '#A8341C', MUT = '#6
 export interface PlanFigureProps {
   /** Which of the row's boxes this is. */
   boxClass?: string;
+  /** A control beside the expand icon in the figure's corner — the 3D view. */
+  tool?: React.ReactNode;
   /** The counts under the drawing, inside the box that sizes it. */
   foot?: React.ReactNode;
   kind: RackKind;
@@ -97,6 +99,13 @@ function PlanFigure(p: PlanFigureProps) {
   const drew: { detail: Detail | null } = { detail: null };
   const vertical = p.orientation === 'width';
 
+  // Where every band, flue and lane block stands — the engine's, shared with
+  // the 3D view.
+  const geom = palletPlanGeometry(p.kind, L, {
+    buildingLengthFt: p.buildingLengthFt, buildingWidthFt: p.buildingWidthFt,
+    wallClearanceFt: p.wallClearanceFt, orientation: p.orientation,
+  });
+
   const fit = fitFigure(p.box ?? planBox(), (fAnno, ext, widthPx) => {
   // How much room a bay actually gets on screen decides how much of this is
   // worth drawing. Nothing here touches a count: every figure on the sheet
@@ -139,7 +148,6 @@ function PlanFigure(p: PlanFigureProps) {
   // which is the axis the solver reserved it on. The staging strip follows it,
   // so the rows never cross the space in front of the doors.
   const alongStartFt = p.wallClearanceFt + DOCK_APRON_FT;
-  const acrossStartFt = p.wallClearanceFt + L.acrossOffsetFt;
   const bayStarts = L.bayStartsFt;
 
   const runLenFt = (bayStarts.at(-1) ?? 0) + L.bayLengthFt;
@@ -280,38 +288,28 @@ function PlanFigure(p: PlanFigureProps) {
   // the plan and crowded the rows on a big floor. The width is said once, in
   // the run summary under the sheet.
 
-  let c = acrossStartFt;
+  // Every band, flue and lane block where the engine placed it — the same
+  // geometry the 3D view stands its racking on, so the two cannot disagree.
+  const Z = geom.pallets!;
   if (R.pick === 'aisle') {
-    const single = deep * fd;
-    const pair = deep * fd * 2 + flue;
-    if (L.wallRows > 0) {
-      band(c, single, deep);
-      c += single;
-      c += aisle;
-    }
-    const pairs = (L.rows - L.wallRows) / 2;
-    for (let i = 0; i < pairs; i++) {
-      band(c, deep * fd, deep);
-      const fc = c + deep * fd;
-      const fh = Math.max(1.4 / sc, flue);
-      if (flue > 0 && d.bays) {
+    for (const b of Z.bands) band(b.cFt, b.depthFt, b.deep);
+    // A flue is the gap between the two rows of a back-to-back pair, drawn at
+    // least a hairline wide so it reads at any scale, centred on where it is.
+    if (flue > 0 && d.bays) {
+      for (const f of Z.flues) {
+        const fh = Math.max(1.4 / sc, f.depthFt);
+        const fc = f.cFt + (f.depthFt - fh) / 2;
         for (const bs of bayStarts) {
           parts.push(<rect key={key++} {...box(alongStartFt + bs, L.bayLengthFt, fc, fh)} fill={Y} />);
         }
         flueCallout(fc, fh);
       }
-      band(fc + fh, deep * fd, deep);
-      c += pair;
-      c += aisle;
     }
-    if (L.wallRows > 1) band(c, single, deep);
   } else {
-    const block = deep * fd;
-    if (R.openEnds === 2) c += aisle;
-    for (let b = 0; b < L.blocks; b++) {
-      band(c, block, 1);
-      for (let dd = 1; dd < deep; dd++) {
-        const dc = c + (block * dd) / deep;
+    Z.bands.forEach((b) => {
+      band(b.cFt, b.depthFt, 1);
+      for (let dd = 1; dd < b.deep; dd++) {
+        const dc = b.cFt + (b.depthFt * dd) / b.deep;
         // Per bay, not across the whole block: a lane's depth divisions are
         // part of the racking and stop where the racking stops.
         for (const bs of bayStarts) {
@@ -320,23 +318,10 @@ function PlanFigure(p: PlanFigureProps) {
             stroke={G} strokeWidth={STROKE.divider} strokeDasharray="4 3" />);
         }
       }
-      /*
-       * Where this block is worked from, as the layout says it is.
-       *
-       * Drive-through is open at both ends and marked at both. Drive-in has
-       * exactly one open end and the solver named it: `front` is the block's
-       * near end across the building, `back` its far end. The end is read here,
-       * never worked out from which side the wall is on — a dealer can flip it,
-       * and a drawing that inferred it would then contradict the layout.
-       */
-      if (R.openEnds === 2) {
-        entry(c, block, -1);
-        entry(c, block, 1);
-      } else if (R.openEnds === 1) {
-        entry(c, block, L.blockAccess[b] === 'back' ? 1 : -1);
-      }
-      c += block + aisle;
-    }
+      // Where this block is worked from, as the layout says it is — read off
+      // the geometry, never worked out from which side the wall is on.
+      for (const end of b.openEnds) entry(b.cFt, b.depthFt, end === 'near' ? -1 : 1);
+    });
   }
 
   /* the strip at the dock end the customer said is not available */
@@ -456,10 +441,13 @@ function PlanFigure(p: PlanFigureProps) {
     <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={<PlanHead lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} legend={legend} />}
       foot={<><SimplifiedNote detail={drew.detail} layout={L} kind={R.pick === 'lane' ? 'lane' : 'bay'} />{p.foot}</>}
       info={(
+        <>
+        {p.tool}
         <FigExpand label={`Plan — ${p.buildingLengthFt} × ${p.buildingWidthFt} ft`}
           viewBox={fit.viewBox} aspect={fit.aspect} refit={fit.refit}>
           {fit.drawn}
         </FigExpand>
+        </>
       )}>
     <div className="planfit">
     <svg id="plan" viewBox={fit.viewBox}

@@ -643,8 +643,46 @@
    is clipped to a fixed height so that chrome above a drawing cannot change
    where the drawing sits, and anything opened from inside it would be cut off
    at the first line. The heading keeps clear of it with a pad instead. */
-.a3 .figtool{position:absolute;top:0;right:0;z-index:3}
+.a3 .figtool{position:absolute;top:0;right:0;z-index:3;display:flex;align-items:center;gap:4px}
 .a3 .figbox:has(.figtool) .fighead{padding-right:22px}
+/* The 3D button sits in the same corner, before the expand icon, so the
+   heading keeps clear of both. */
+.a3 .figbox:has(.fig3dbtn) .fighead{padding-right:52px}
+.a3 .fig3dbtn{height:18px;padding:0 5px;cursor:pointer;border:1px solid var(--line);border-radius:2px;
+  background:var(--paper);color:var(--pine);font-family:var(--ff-body);font-weight:600;font-size:10px;
+  letter-spacing:.04em;line-height:1}
+.a3 .fig3dbtn:hover{border-color:var(--pine)}
+.a3 .fig3dbtn:focus-visible{outline:1px solid var(--blue);outline-offset:1px}
+
+/* ── the 3D view: the whole warehouse, view only ─────────────────────── */
+/* As the mock has it: a paper card inset from the window over a dimmed sheet,
+   a bar with the title and three controls, and two quiet notes in the corners
+   of the drawing. */
+.a3 .w3d{position:fixed;inset:0;z-index:60;background:rgb(26 29 27 / .55)}
+.a3 .w3dbox{position:absolute;inset:24px;display:flex;flex-direction:column;overflow:hidden;
+  background:#F2F1EC;border-radius:6px;box-shadow:0 20px 60px #0008}
+.a3 .w3dbar{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #D6D4C9;
+  background:#F2F1EC;flex-wrap:wrap}
+.a3 .w3dtitle{font-family:var(--ff-mono);font-size:11px;letter-spacing:.14em;color:#6E7A6F;text-transform:uppercase}
+.a3 .w3dsp{flex:1}
+.a3 .w3dbtn{font-family:var(--ff-body);font-weight:500;font-size:12px;border:1px solid #D6D4C9;background:#fff;
+  color:var(--pine);border-radius:2px;padding:6px 12px;cursor:pointer}
+.a3 .w3dbtn:hover:not(:disabled){border-color:var(--pine)}
+.a3 .w3dbtn:disabled{opacity:.5;cursor:default}
+.a3 .w3dbtn[aria-pressed="true"]{background:var(--pine);color:#F2F1EC;border-color:var(--pine)}
+.a3 .w3dbtn:focus-visible,.a3 .w3dx:focus-visible{outline:2px solid var(--blue);outline-offset:1px}
+.a3 .w3dx{font-size:18px;line-height:1;border:0;background:none;color:#6E7A6F;cursor:pointer;padding:0 4px}
+.a3 .w3dx:hover{color:var(--pine)}
+.a3 .w3dstage{flex:1;position:relative;min-height:0}
+/* Touch gestures belong to the view, not to the page behind it. */
+.a3 .w3dcanvas{position:absolute;inset:0;touch-action:none}
+.a3 .w3dmsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-family:var(--ff-body);font-size:13px;color:#3F4A40;pointer-events:none}
+.a3 .w3dnote,.a3 .w3dhint{position:absolute;bottom:12px;font-family:var(--ff-body);font-size:11px;
+  background:#ffffffcc;border:1px solid #D6D4C9;border-radius:3px;padding:6px 10px;pointer-events:none}
+.a3 .w3dnote{left:14px;color:#3F4A40}
+.a3 .w3dhint{right:14px;color:#6E7A6F}
+@media (max-width:640px){ .a3 .w3dbox{inset:8px} .a3 .w3dhint{display:none} }
 /* Every line in a figure is drawn in screen pixels, not drawing units, so a plan
    reads the same weight on the sheet and in the expanded view. The weights
    themselves are set by role — see STROKE in figText.ts. The heading's legend

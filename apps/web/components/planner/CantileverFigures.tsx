@@ -1,7 +1,7 @@
 'use client';
 
 import { memo } from 'react';
-import { DOCK_APRON_FT, ftIn } from '@trace/rack-engine';
+import { DOCK_APRON_FT, cantileverPlanGeometry, ftIn } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
 import { FigBoxEl, FigExpand, PlanHead, type LegendItem } from './figBox';
 import {
@@ -40,6 +40,8 @@ export interface CantileverPlanProps {
   box?: FigBox;
   /** Which of the row's boxes this is. */
   boxClass?: string;
+  /** A control beside the expand icon in the figure's corner — the 3D view. */
+  tool?: React.ReactNode;
 }
 
 function Plan(p: CantileverPlanProps) {
@@ -56,6 +58,12 @@ function Plan(p: CantileverPlanProps) {
   // this many units, so the margins and the labels carry the same weight in a
   // 400 x 100 shed as in a square one. The viewBox is fitted afterwards.
   const vertical = p.orientation === 'width';
+  // Where every row, column line and arm set stands — the engine's, shared
+  // with the 3D view.
+  const geom = cantileverPlanGeometry(L, {
+    buildingLengthFt: p.buildingLengthFt, buildingWidthFt: p.buildingWidthFt,
+    wallClearanceFt: p.wallClearanceFt, orientation: p.orientation,
+  });
 
   const fit = fitFigure(p.box ?? planBox(), (fAnno, ext, widthPx) => {
 
@@ -75,40 +83,20 @@ function Plan(p: CantileverPlanProps) {
     lengthFt: p.buildingLengthFt, widthFt: p.buildingWidthFt,
   });
   const alongStartFt = p.wallClearanceFt + DOCK_APRON_FT;
-  // The apron is reserved on the axis the rows run, and the staging strip is
-  // drawn on that wall, so the rows never cross it.
-  const acrossStartFt = p.wallClearanceFt;
 
-  const armFt = L.armLengthIn / 12;
   const parts: React.ReactNode[] = [];
   let key = 0;
 
-  let c = acrossStartFt;
-
-  L.rowSides.forEach((sides, r) => {
-    const depthFt = sides === 2 ? L.doubleDepthFt : L.singleDepthFt;
-    /*
-     * A wall row is reached only from the aisle, so its arms face inward: the
-     * column line sits on the wall side and the arms reach away from it.
-     *
-     * Which wall depends on where in the building the row is. The solver lays
-     * a single row against the near wall first — it braces back to it — and
-     * only ever puts a second single at the far wall, as a last resort. So a
-     * row is at the far wall when it is the last of several, never when it is
-     * the only one: `r === rows - 1` alone is also true of a lone row, which
-     * turned the one case the building most often has — a single wall row —
-     * around to face the wall it is standing against.
-     */
-    const atFarWall = sides === 1 && r > 0 && r === L.rows - 1;
-    const colC = sides === 2 ? c + depthFt / 2 : atFarWall ? c + depthFt : c;
-    const armC0 = sides === 2 ? colC - armFt : atFarWall ? colC - armFt : colC;
-    const armC1 = sides === 2 ? colC + armFt : atFarWall ? colC : colC + armFt;
+  // Every row's column line and arm reach where the engine placed them — the
+  // same geometry the 3D view stands its towers on. A wall row's arms face the
+  // aisle, never the wall; the geometry says which way.
+  geom.cantilever!.rows.forEach((row) => {
+    const colC = row.colCFt, armC0 = row.armFromCFt, armC1 = row.armToCFt;
 
     // Only the runs this row carries: a row of a strip sized by linear feet
     // stops where the stock does, and a cross aisle is a gap in the row rather
     // than something drawn over the top of it.
-    const lastRow = r === L.rows - 1;
-    const runsHere = lastRow ? L.runsInLastRow : L.runsPerRow;
+    const runsHere = row.runs;
     for (let run = 0; run < runsHere; run++) {
       // the run occupies the product; the towers span less than that
       const runA = alongStartFt + (L.runStartsFt[run] ?? 0);
@@ -137,11 +125,6 @@ function Plan(p: CantileverPlanProps) {
     // way an aisle is one, so there is nowhere inside a row's own band to put
     // it without sitting on the arms.
 
-    c += depthFt;
-    if (r < L.rows - 1) {
-      // The aisle's width is said once, in the run summary, not on each gap.
-      c += p.aisleFt;
-    }
   });
 
 
@@ -218,10 +201,13 @@ function Plan(p: CantileverPlanProps) {
   return (
     <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={<PlanHead lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} legend={legend} />}
       info={(
+        <>
+        {p.tool}
         <FigExpand label={`Plan — ${p.buildingLengthFt} × ${p.buildingWidthFt} ft`}
           viewBox={fit.viewBox} aspect={fit.aspect} refit={fit.refit}>
           {fit.drawn}
         </FigExpand>
+        </>
       )}>
       <svg id="plan" viewBox={fit.viewBox}
         style={{ aspectRatio: String(fit.aspect) }}

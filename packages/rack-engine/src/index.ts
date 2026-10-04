@@ -11,6 +11,8 @@ export * from './longgoods.js';
 export * from './cantileverlayout.js';
 export * from './cantileverruns.js';
 export * from './mixedlayout.js';
+export * from './plangeometry.js';
+export * from './scene3d.js';
 export * from './constants.js';
 export * from './crossaisles.js';
 export {
