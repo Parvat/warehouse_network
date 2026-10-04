@@ -6,12 +6,12 @@ import {
   type Orientation, type RackKind, type RackLayout,
 } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
-import { columnMarks } from './ColumnMarks';
-import { columnSpacingFt, detailFor, simplifiedNote, type Detail } from './detail';
+import { detailFor, simplifiedNote, type Detail } from './detail';
 import { FigBoxEl, FigExpand, PlanHead, type LegendItem } from './figBox';
 import {
-  aisleLabelFits, centeredCrossAisleFt, floorFraction, insideAisleLabel, outsideRowLabel, planBox, fitFigure,
+  centeredCrossAisleFt, floorFraction, planFit, planFrameX, planFrameY, planBox, fitFigure,
   type Extent, type FigBox,
+  STROKE,
 } from './figText';
 
 /**
@@ -66,7 +66,7 @@ function SimplifiedNote({ detail, layout, kind }: {
 }) {
   const text = detail
     && simplifiedNote(detail, {
-      rows: layout.rows, bays: layout.bays, columns: layout.columns.length,
+      rows: layout.rows, bays: layout.bays,
       unit: kind === 'lane' ? 'lane' : 'bay',
     });
   return text ? <p className="figsimple">{text}</p> : null;
@@ -75,20 +75,26 @@ function SimplifiedNote({ detail, layout, kind }: {
 function PlanFigure(p: PlanFigureProps) {
   const R = rackType(p.kind);
   const L = p.layout;
-  const PX = 74, PY = 40;
-
-  // An internal scale, and only that: the building's longest side is always
-  // this many units, so a 400 x 100 shed and a 150 x 150 one are drawn with
-  // their labels and margins carrying the same weight. What decides how big
-  // any of it lands on screen is the viewBox fitted to it afterwards.
-  const NOMINAL = 470;
+  /*
+   * The frame Fig. 1 is drawn in, and it does not move.
+   *
+   * The building used to set the shape of its own box: the longest side was
+   * always NOMINAL units, so a square floor drew a square box and the whole
+   * figure grew a third taller than the same sheet with a long shed on it.
+   * A reader flicking between two buildings was watching the paper change size
+   * rather than the building.
+   *
+   * So the frame is fixed and the building is fitted into it, the way an
+   * elevation is fitted into the frame `elevationFrameY` gives it. A long shed
+   * fills the frame across; a square floor draws smaller and square inside the
+   * same frame, letterboxed either side.
+   */
+  const { sc, w: W, h: H, px: PX, py: PY } = planFit(p.buildingLengthFt, p.buildingWidthFt);
   // What the drawing settled on, read back once it has been fitted. Held on an
   // object rather than in a plain `let`: TypeScript does not follow an
   // assignment made inside a nested function, so a `let` still reads as its
   // initialiser out here, while a property's narrowing resets at the call.
   const drew: { detail: Detail | null } = { detail: null };
-  const sc = NOMINAL / Math.max(p.buildingLengthFt, p.buildingWidthFt);
-  const W = p.buildingLengthFt * sc, H = p.buildingWidthFt * sc;
   const vertical = p.orientation === 'width';
 
   const fit = fitFigure(p.box ?? planBox(), (fAnno, ext, widthPx) => {
@@ -101,9 +107,6 @@ function PlanFigure(p: PlanFigureProps) {
     // what full detail would come to, for the element ceiling to cap. A lane
     // block is one band whatever its depth; an aisle-picked row is a band each.
     bands: R.pick === 'lane' ? L.blocks : L.rows, bays: L.bays, deep: L.deep,
-    // the closest two columns get, which is what decides whether they can be
-    // told apart on the page
-    columnSpacingFt: columnSpacingFt(L.columns),
   });
 
 
@@ -113,6 +116,15 @@ function PlanFigure(p: PlanFigureProps) {
     : { x: PX + aPx, y: PY + cPx, width: aLenPx, height: cLenPx });
   const box = (aFt: number, aLenFt: number, cFt: number, cLenFt: number) =>
     at(aFt * sc, aLenFt * sc, cFt * sc, cLenFt * sc);
+  /**
+   * A frame across a row at `bPx` along it: a divider between bays, standing a
+   * unit proud of each face so it reads as the upright it is. A line rather than
+   * a filled bar, so it keeps its screen weight at any size — see `STROKE`.
+   */
+  const frameAt = (bPx: number, cFt: number, thickFt: number) => {
+    const r = at(bPx, 0, cFt * sc - 1, thickFt * sc + 2);
+    return { x1: r.x, y1: r.y, x2: r.x + r.width, y2: r.y + r.height };
+  };
 
   const fd = p.frameDepthIn / 12;
   const flue = R.pick === 'lane' ? 0 : p.flueIn / 12;
@@ -126,12 +138,9 @@ function PlanFigure(p: PlanFigureProps) {
   // The racking starts clear of the dock apron on the axis the rows run —
   // which is the axis the solver reserved it on. The staging strip follows it,
   // so the rows never cross the space in front of the doors.
-  // The solver slid the block to clear the columns; the drawing has to sit
-  // where it put it, or the plan and the count describe different buildings.
   const alongStartFt = p.wallClearanceFt + DOCK_APRON_FT;
   const acrossStartFt = p.wallClearanceFt + L.acrossOffsetFt;
   const bayStarts = L.bayStartsFt;
-  const lost = new Set(L.columns.filter((c) => !c.absorbed).map((c) => `${c.row}:${c.bay}`));
 
   const runLenFt = (bayStarts.at(-1) ?? 0) + L.bayLengthFt;
 
@@ -192,13 +201,13 @@ function PlanFigure(p: PlanFigureProps) {
           const a0 = alongStartFt + bayStarts[seg0]!;
           const lenFt = prev! + L.bayLengthFt - bayStarts[seg0]!;
           parts.push(<rect key={key++} {...box(a0, lenFt, cFt, thickFt)}
-            fill={FILL} stroke={G} strokeWidth={d.level === 'banded' ? 0.9 : 0.6} />);
+            fill={FILL} stroke={G} strokeWidth={STROKE.rack} />);
           // the frames closing each end of the segment, which are the one thing
           // still worth a mark at this scale
           for (const k of [0, 1]) {
             const bPx = (a0 + k * lenFt) * sc;
-            parts.push(<rect key={key++}
-              {...at(bPx - 0.8, 1.6, cFt * sc - 1, thickFt * sc + 2)} fill={G} />);
+            parts.push(<line key={key++}
+              {...frameAt(bPx, cFt, thickFt)} stroke={G} strokeWidth={STROKE.divider} />);
           }
           seg0 = j;
         }
@@ -207,22 +216,12 @@ function PlanFigure(p: PlanFigureProps) {
     }
     for (let j = 0; j < bayStarts.length; j++) {
       const a0 = alongStartFt + bayStarts[j]!;
-      const killed = lost.has(`${row}:${j}`);
       parts.push(<rect key={key++} {...box(a0, L.bayLengthFt, cFt, thickFt)}
-        fill={killed ? '#F6E4DE' : FILL} stroke={killed ? RED : G} strokeWidth={0.9} />);
-      if (killed) {
-        // hatched, because the bay is drawn where it is and then given up
-        for (let t = 0; t < 4; t++) {
-          const f = (t + 0.5) / 4;
-          const h = box(a0 + L.bayLengthFt * f, 0, cFt, thickFt);
-          parts.push(<line key={key++} x1={h.x} y1={h.y} x2={h.x + h.width} y2={h.y + h.height}
-            stroke={RED} strokeWidth={0.5} opacity={0.7} />);
-        }
-      }
+        fill={FILL} stroke={G} strokeWidth={STROKE.rack} />);
       for (let q = 1; q < nDeep; q++) {
         const l = box(a0, L.bayLengthFt, cFt + (thickFt * q) / nDeep, 0);
         parts.push(<line key={key++} x1={l.x} y1={l.y} x2={l.x + l.width} y2={l.y + l.height}
-          stroke={G} strokeWidth={0.55} strokeDasharray="5 3" />);
+          stroke={G} strokeWidth={STROKE.divider} strokeDasharray="5 3" />);
       }
       // A frame at the end of every bay, and at the start of every bay that
       // opens a segment — the first, and the first after each cross aisle.
@@ -230,8 +229,8 @@ function PlanFigure(p: PlanFigureProps) {
       const opensSegment = prev === undefined || bayStarts[j]! - prev > L.bayLengthFt + 0.01;
       for (const k of opensSegment ? [0, 1] : [1]) {
         const bPx = (a0 + k * L.bayLengthFt) * sc;
-        parts.push(<rect key={key++}
-          {...at(bPx - 0.8, 1.6, cFt * sc - 1, thickFt * sc + 2)} fill={G} />);
+        parts.push(<line key={key++}
+          {...frameAt(bPx, cFt, thickFt)} stroke={G} strokeWidth={STROKE.divider} />);
       }
     }
   };
@@ -270,31 +269,16 @@ function PlanFigure(p: PlanFigureProps) {
     const my = PY + (cFt + thickFt / 2) * sc;
     const endA = (alongStartFt + runLenFt) * sc;
     parts.push(
-      <line key={key++} x1={PX + endA} y1={my} x2={PX + W + 4} y2={my} stroke={Y} strokeWidth={1} />,
+      <line key={key++} x1={PX + endA} y1={my} x2={PX + W + 4} y2={my} stroke={Y} strokeWidth={STROKE.beam} />,
       <text key={key++} x={PX + W + 6} y={my + 3}
         fontFamily="JetBrains Mono" fontSize={fAnno} fill="#B08F52">FLUE {p.flueIn}&#34;</text>,
     );
     ext.text({ x: PX + W + 6, y: my + 3, size: fAnno, text: `FLUE ${p.flueIn}"` });
   };
 
-  /**
-   * One aisle width, called out from the same rule every plan uses: inside
-   * the gap it dimensions, near the entrance where the floor is always real
-   * racking rather than a cross aisle, in the dimension blue — or, on a large
-   * enough building that the same aisle shrinks to a few pixels on screen,
-   * past the wall instead, where a label at this one fixed size always has
-   * room. `cFt` is the aisle's own start, across the rows.
-   */
-  const aisleLabel = (cFt: number) => {
-    const text = `${aisle}'`;
-    const acrossPx = (cFt + aisle / 2) * sc;
-    const o = box(alongStartFt + 4, 0, cFt + aisle / 2, 0);
-    const lbl = aisleLabelFits({ aisleFt: aisle, sc, size: fAnno })
-      ? insideAisleLabel(ext, { vertical, x: o.x, y: o.y, text, size: fAnno })
-      : outsideRowLabel(ext, { vertical, px: PX, py: PY, w: W, h: H, acrossPx, text, size: fAnno, fill: BLUE });
-    parts.push(<text key={key++} {...lbl}
-      fontFamily="JetBrains Mono" fontSize={fAnno} fill={BLUE}>{aisle}&#8242;</text>);
-  };
+  // No width on each aisle: one label per gap repeated the same figure down
+  // the plan and crowded the rows on a big floor. The width is said once, in
+  // the run summary under the sheet.
 
   let c = acrossStartFt;
   if (R.pick === 'aisle') {
@@ -303,7 +287,6 @@ function PlanFigure(p: PlanFigureProps) {
     if (L.wallRows > 0) {
       band(c, single, deep);
       c += single;
-      aisleLabel(c);
       c += aisle;
     }
     const pairs = (L.rows - L.wallRows) / 2;
@@ -319,11 +302,6 @@ function PlanFigure(p: PlanFigureProps) {
       }
       band(fc + fh, deep * fd, deep);
       c += pair;
-      // The gap after the very last pair, when there is no far wall row to
-      // reach through it, is not a real aisle — it is spare floor with
-      // nothing on its far side, and a label on it would name a gap that
-      // does not exist.
-      if (i < pairs - 1 || L.wallRows > 1) aisleLabel(c);
       c += aisle;
     }
     if (L.wallRows > 1) band(c, single, deep);
@@ -339,7 +317,7 @@ function PlanFigure(p: PlanFigureProps) {
         for (const bs of bayStarts) {
           const l = box(alongStartFt + bs, L.bayLengthFt, dc, 0);
           parts.push(<line key={key++} x1={l.x} y1={l.y} x2={l.x + l.width} y2={l.y + l.height}
-            stroke={G} strokeWidth={0.5} strokeDasharray="4 3" />);
+            stroke={G} strokeWidth={STROKE.divider} strokeDasharray="4 3" />);
         }
       }
       /*
@@ -401,7 +379,7 @@ function PlanFigure(p: PlanFigureProps) {
     const r = box(alongStartFt + centredA, L.crossAisleWidthFt,
       0, vertical ? p.buildingLengthFt : p.buildingWidthFt);
     parts.push(<rect key={key++} {...r} fill="#fff" stroke={BLUE}
-      strokeWidth={0.6} strokeDasharray="3 2" />);
+      strokeWidth={STROKE.dash} strokeDasharray="3 2" />);
     // At a scale where a bay is a couple of pixels the aisle is a couple of
     // pixels wide too, and a label reading along it lands on the wall beside it.
     if (i === 0 && d.perRowLabels) {
@@ -414,33 +392,6 @@ function PlanFigure(p: PlanFigureProps) {
     }
   });
 
-  /* The columns the layout was built around. A column in a bay costs that bay
-     and is drawn with it; the two that stop a building working — one standing
-     in an aisle, one against a pick face — are marked here, because no amount
-     of hatching a bay says "the truck cannot get to this". */
-  if (!d.columnsIndividually && L.columns.length > 0) {
-    // Closer together than a few pixels, a column mark each is a dotted mess.
-    // The grid is what a reader can still use at this scale, and the count goes
-    // in the stats line where it stays legible.
-    const xs = [...new Set(L.columns.map((c) => c.xFt))];
-    const ys = [...new Set(L.columns.map((c) => c.yFt))];
-    for (const x of xs) {
-      parts.push(<line key={key++} x1={PX + x * sc} y1={PY} x2={PX + x * sc} y2={PY + H}
-        stroke={BLUE} strokeWidth={0.4} opacity={0.35} />);
-    }
-    for (const y of ys) {
-      parts.push(<line key={key++} x1={PX} y1={PY + y * sc} x2={PX + W} y2={PY + y * sc}
-        stroke={BLUE} strokeWidth={0.4} opacity={0.35} />);
-    }
-  }
-  {
-    const marks = columnMarks({
-      columns: L.columns, px: PX, py: PY, sc,
-      individually: d.columnsIndividually, keyFrom: key,
-    });
-    key += marks.length;
-    parts.push(...marks);
-  }
   if (p.gridLabel) {
     ext.text({ x: PX + W, y: PY - 6, size: fAnno, text: p.gridLabel, anchor: 'end' });
     parts.push(<text key={key++} x={PX + W} y={PY - 6} textAnchor="end"
@@ -456,8 +407,21 @@ function PlanFigure(p: PlanFigureProps) {
       </>
     );
   }, {
+    /*
+     * The frame, held open whatever is drawn in it.
+     *
+     * Fitted to its contents the box would still follow the building: a square
+     * floor puts its dimension lines and its margin labels in different places
+     * from a long one, and the box would close around them. Locked, the box is
+     * the frame plus the room its callouts need — the width dimension standing
+     * off the left wall, the length dimension over the top, the row labels down
+     * the right — measured from the frame rather than from the building.
+     */
+    lockX: planFrameX,
+    lockY: planFrameY,
     // The back wall of the building is this drawing's floor, and it is the
-    // line the elevations beside it stand their own floors on.
+    // line the elevations beside it stand their own floors on. Held as well as
+    // locked: if anything ever outgrows the frame above, the floor still lands.
     floorAt: (font) => ({ y: PY + H, fraction: floorFraction(font) }),
   });
 
@@ -493,7 +457,7 @@ function PlanFigure(p: PlanFigureProps) {
       foot={<><SimplifiedNote detail={drew.detail} layout={L} kind={R.pick === 'lane' ? 'lane' : 'bay'} />{p.foot}</>}
       info={(
         <FigExpand label={`Plan — ${p.buildingLengthFt} × ${p.buildingWidthFt} ft`}
-          viewBox={fit.viewBox} aspect={fit.aspect}>
+          viewBox={fit.viewBox} aspect={fit.aspect} refit={fit.refit}>
           {fit.drawn}
         </FigExpand>
       )}>

@@ -3,11 +3,11 @@
 import { memo } from 'react';
 import { DOCK_APRON_FT, ftIn } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
-import { columnMarks } from './ColumnMarks';
-import { FigBoxEl, PlanHead, type LegendItem } from './figBox';
+import { FigBoxEl, FigExpand, PlanHead, type LegendItem } from './figBox';
 import {
-  EL_FRAME, aisleLabelFits, centeredCrossAisleFt, elevationFrameY, elevationPpi, elBox, floorFraction,
-  insideAisleLabel, outsideRowLabel, planBox, fitFigure, type Extent, type FigBox,
+  EL_FRAME, centeredCrossAisleFt, elevationFrameY, elevationPpi, elBox, floorFraction,
+  planFit, planFrameX, planFrameY, planBox, fitFigure, type Extent, type FigBox,
+  STROKE,
 } from './figText';
 import type { CantileverRunLayout, Orientation } from '@trace/rack-engine';
 
@@ -44,7 +44,9 @@ export interface CantileverPlanProps {
 
 function Plan(p: CantileverPlanProps) {
   const L = p.layout;
-  const PX = 74, PY = 40;
+  // Fig. 1 is drawn in a fixed frame and the building is fitted into it, so
+  // its box is one shape whatever is on the floor. See `planFit`.
+  const { sc, w: W, h: H, px: PX, py: PY } = planFit(p.buildingLengthFt, p.buildingWidthFt);
 
   // The building never turns: length across the page, width down it. Only the
   // racking turns, so everything inside the walls is laid out in (along,
@@ -53,9 +55,6 @@ function Plan(p: CantileverPlanProps) {
   // The scale is internal and only that: the building's longest side is always
   // this many units, so the margins and the labels carry the same weight in a
   // 400 x 100 shed as in a square one. The viewBox is fitted afterwards.
-  const NOMINAL = 470;
-  const sc = NOMINAL / Math.max(p.buildingLengthFt, p.buildingWidthFt);
-  const W = p.buildingLengthFt * sc, H = p.buildingWidthFt * sc;
   const vertical = p.orientation === 'width';
 
   const fit = fitFigure(p.box ?? planBox(), (fAnno, ext, widthPx) => {
@@ -121,12 +120,12 @@ function Plan(p: CantileverPlanProps) {
       for (let t = 0; t < L.towersPerRun; t++) {
         const tA = towerA + t * L.towerCentresFt;
         parts.push(
-          <line key={key++} {...line(tA, 0, armC0, armC1 - armC0)} stroke={ARM} strokeWidth={0.9} />,
+          <line key={key++} {...line(tA, 0, armC0, armC1 - armC0)} stroke={ARM} strokeWidth={STROKE.beam} />,
           <rect key={key++} {...at(tA * sc - 1.6, 3.2, colC * sc - 2.6, 5.2)} fill={G} />,
         );
       }
       parts.push(<line key={key++} {...line(towerA, L.spanFt, colC, 0)}
-        stroke={G} strokeWidth={2} />);
+        stroke={G} strokeWidth={STROKE.rack} />);
     }
 
     // No per-row label: "2 sides" used to be called out here, past the wall,
@@ -140,18 +139,7 @@ function Plan(p: CantileverPlanProps) {
 
     c += depthFt;
     if (r < L.rows - 1) {
-      // Inside the gap it dimensions, near the entrance where the floor is
-      // always real racking rather than a cross aisle — see insideAisleLabel —
-      // or past the wall, on a run of rows tight enough that this aisle no
-      // longer has room on screen for its own label — see aisleLabelFits.
-      const text = `${p.aisleFt}′`;
-      const acrossPx = (c + p.aisleFt / 2) * sc;
-      const o = box(alongStartFt + 4, 0, c + p.aisleFt / 2, 0);
-      const lbl = aisleLabelFits({ aisleFt: p.aisleFt, sc, size: fAnno })
-        ? insideAisleLabel(ext, { vertical, x: o.x, y: o.y, text, size: fAnno })
-        : outsideRowLabel(ext, { vertical, px: PX, py: PY, w: W, h: H, acrossPx, text, size: fAnno, fill: BLUE });
-      parts.push(<text key={key++} {...lbl}
-        fontFamily="JetBrains Mono" fontSize={fAnno} fill={BLUE}>{p.aisleFt}&#8242;</text>);
+      // The aisle's width is said once, in the run summary, not on each gap.
       c += p.aisleFt;
     }
   });
@@ -189,7 +177,7 @@ function Plan(p: CantileverPlanProps) {
       0, vertical ? p.buildingLengthFt : p.buildingWidthFt);
     // Opaque, because a cross aisle is empty floor and not a window: the runs
     // either side really stop, and anything showing through would say they do not.
-    parts.push(<rect key={key++} {...r} fill="#fff" stroke={BLUE} strokeWidth={0.6}
+    parts.push(<rect key={key++} {...r} fill="#fff" stroke={BLUE} strokeWidth={STROKE.dash}
       strokeDasharray="3 2" />);
     if (i === 0) {
       const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
@@ -200,15 +188,6 @@ function Plan(p: CantileverPlanProps) {
     }
   });
 
-  // the building's columns, drawn because they are a fact about the floor
-  // Marked for what each is standing in, the same way the pallet plan marks
-  // them — a tower row has aisles between it and the next just as a pallet
-  // row does, and a column in one stops the same truck.
-  {
-    const cols = columnMarks({ columns: L.columns, px: PX, py: PY, sc, individually: true, keyFrom: key });
-    key += cols.length;
-    parts.push(...cols);
-  }
 
 
     return (
@@ -219,8 +198,10 @@ function Plan(p: CantileverPlanProps) {
       </>
     );
   }, {
-    // The back wall of the building is this drawing's floor, and it is the
-    // line the elevations beside it stand their own floors on.
+    lockX: planFrameX,
+    lockY: planFrameY,
+    // Held as well as locked: if anything ever outgrows the frame above,
+    // the back wall still lands on the line the elevations stand on.
     floorAt: (font) => ({ y: PY + H, fraction: floorFraction(font) }),
   });
 
@@ -235,7 +216,13 @@ function Plan(p: CantileverPlanProps) {
   ];
 
   return (
-    <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={<PlanHead lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} legend={legend} />}>
+    <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={<PlanHead lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} legend={legend} />}
+      info={(
+        <FigExpand label={`Plan — ${p.buildingLengthFt} × ${p.buildingWidthFt} ft`}
+          viewBox={fit.viewBox} aspect={fit.aspect} refit={fit.refit}>
+          {fit.drawn}
+        </FigExpand>
+      )}>
       <svg id="plan" viewBox={fit.viewBox}
         style={{ aspectRatio: String(fit.aspect) }}
         preserveAspectRatio="xMidYMid meet" role="img"
@@ -279,7 +266,7 @@ function Elevation({
   const topY = FL - L.towerHeightIn * ppi;
   const spY = FL - clearHeightFt * 12 * ppi;
 
-  const fit = fitFigure(box ?? elBox(24, 24), (fAnno, ext, widthPx) => {
+  const fit = fitFigure(box ?? elBox(), (fAnno, ext, widthPx) => {
   const fDim = fAnno, fTiny = fAnno;
   // The floor and the sprinkler line run the full width of the figure, and the
   // figure's width is decided by everything else — so they are over-drawn past
@@ -293,12 +280,12 @@ function Elevation({
 
   ext.add(CX, FL, 0, 11);
   parts.push(<line key={key++} x1={CX - BLEED} y1={FL} x2={CX + BLEED} y2={FL}
-    stroke={INK} strokeWidth={3} />);
+    stroke={INK} strokeWidth={STROKE.wall} />);
   for (let h = CX - BLEED; h < CX + BLEED; h += 26) {
     parts.push(<line key={key++} x1={h} y1={FL} x2={h - 11} y2={FL + 11} stroke={LINE} strokeWidth={1} />);
   }
   parts.push(<line key={key++} x1={CX - BLEED} y1={spY} x2={CX + BLEED} y2={spY}
-    stroke={INK} strokeWidth={1.5} strokeDasharray="9 5" />);
+    stroke={INK} strokeWidth={STROKE.dash} strokeDasharray="9 5" />);
 
   // base, then the tower, then the X-bracing up its height
   const baseHalf = sides === 2 ? basePx : basePx / 2;
@@ -319,9 +306,9 @@ function Elevation({
     const y1 = by, y2 = by - braceStep;
     parts.push(
       <path key={key++} d={`M${CX - colPx / 2} ${y1.toFixed(1)}L${CX + colPx / 2} ${y2.toFixed(1)}`}
-        stroke={ARM} strokeWidth={1.1} fill="none" opacity={0.75} />,
+        stroke={ARM} strokeWidth={STROKE.beam} fill="none" opacity={0.75} />,
       <path key={key++} d={`M${CX + colPx / 2} ${y1.toFixed(1)}L${CX - colPx / 2} ${y2.toFixed(1)}`}
-        stroke={ARM} strokeWidth={1.1} fill="none" opacity={0.75} />,
+        stroke={ARM} strokeWidth={STROKE.beam} fill="none" opacity={0.75} />,
     );
   }
 
@@ -355,9 +342,9 @@ function Elevation({
   // callouts: clear height, tower, arm pitch, arm and base
   const dx = CX - Math.max(armPx, baseHalf) - 34;
   parts.push(
-    <line key={key++} x1={dx} y1={topY} x2={dx} y2={FL} stroke={BLUE} strokeWidth={1} />,
-    <line key={key++} x1={dx - 5} y1={topY} x2={dx + 5} y2={topY} stroke={BLUE} />,
-    <line key={key++} x1={dx - 5} y1={FL} x2={dx + 5} y2={FL} stroke={BLUE} />,
+    <line key={key++} x1={dx} y1={topY} x2={dx} y2={FL} stroke={BLUE} strokeWidth={STROKE.dim} />,
+    <line key={key++} x1={dx - 5} y1={topY} x2={dx + 5} y2={topY} stroke={BLUE} strokeWidth={STROKE.dim} />,
+    <line key={key++} x1={dx - 5} y1={FL} x2={dx + 5} y2={FL} stroke={BLUE} strokeWidth={STROKE.dim} />,
     <text key={key++} transform={`translate(${(dx - 9).toFixed(1)},${((topY + FL) / 2).toFixed(1)}) rotate(-90)`}
       textAnchor="middle" fontFamily="JetBrains Mono" fontSize={fDim} fill={BLUE}>
       TOWER {ftIn(L.towerHeightIn / 12)}</text>,
@@ -403,12 +390,12 @@ function Elevation({
     const tx = px + 9 + fDim * 0.78;
     for (const y of [yLow, yHigh]) {
       parts.push(<line key={key++} x1={right + 2} y1={y} x2={px + 5} y2={y}
-        stroke={LINE} strokeWidth={0.8} />);
+        stroke={LINE} strokeWidth={STROKE.dim} />);
     }
     parts.push(
-      <line key={key++} x1={px} y1={yHigh} x2={px} y2={yLow} stroke={BLUE} strokeWidth={1} />,
-      <line key={key++} x1={px - 5} y1={yHigh} x2={px + 5} y2={yHigh} stroke={BLUE} />,
-      <line key={key++} x1={px - 5} y1={yLow} x2={px + 5} y2={yLow} stroke={BLUE} />,
+      <line key={key++} x1={px} y1={yHigh} x2={px} y2={yLow} stroke={BLUE} strokeWidth={STROKE.dim} />,
+      <line key={key++} x1={px - 5} y1={yHigh} x2={px + 5} y2={yHigh} stroke={BLUE} strokeWidth={STROKE.dim} />,
+      <line key={key++} x1={px - 5} y1={yLow} x2={px + 5} y2={yLow} stroke={BLUE} strokeWidth={STROKE.dim} />,
       <text key={key++} transform={`translate(${tx.toFixed(1)},${((yLow + yHigh) / 2).toFixed(1)}) rotate(-90)`}
         textAnchor="middle" fontFamily="JetBrains Mono" fontSize={fDim} fill={BLUE}>
         {L.armPitchIn}&#34;</text>,

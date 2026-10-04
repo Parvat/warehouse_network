@@ -229,25 +229,85 @@ export const planBox = (mixed = false): FigBox =>
 
 /**
  * An elevation beside the plan, told the plan's shape so it can work out its
- * own share of the row. The building's own ratio is close enough to the
- * drawing's — the margins round it are small and even.
+ * own share of the row.
  */
-export const elBox = (
-  buildingLengthFt: number, buildingWidthFt: number, mixed = false,
-): FigBox => {
-  // The plan draws its building to a fixed size — its longest side is always the
-  // same number of units — inside margins that barely move. So its shape is the
-  // building's, flattened by those margins, and the bare L/W ratio overstates
-  // it: a 400 x 100 shed draws at about 2.8, not 4.
-  const longest = Math.max(1, buildingLengthFt, buildingWidthFt);
-  const w = (470 * buildingLengthFt) / longest + 90;
-  const h = (470 * buildingWidthFt) / longest + 64;
+export const elBox = (mixed = false): FigBox => ({
+  kind: 'row', rowPx: FIG_ROW_PX,
   // On a mixed floor the other elevation shares the row too.
+  sibling: PLAN_ASPECT + (mixed ? EL_ASPECT : 0),
+});
+
+/**
+ * The shape Fig. 1 comes out, which no longer depends on the building.
+ *
+ * The plan is drawn in a fixed frame and the building is fitted inside it, so
+ * its box is one shape whatever is on the floor. This is what the elevation is
+ * told it shares the row with.
+ *
+ * It used to be handed the building's own ratio, which meant the elevation's
+ * share — and so its type size, and so the extent its labels came to, and so
+ * its own shape — moved every time the footprint did. The plan's box then moved
+ * with it, because a row divides its width between the shapes in it: Fig. 1 had
+ * a fixed shape of its own and still changed size, because Fig. 2 beside it did
+ * not. The figures still share the row and still come out one height; what is
+ * gone is the building reaching into the estimate.
+ */
+export const PLAN_ASPECT = 1.87;
+
+/**
+ * The frame Fig. 1 is drawn in, whatever sheet it is on and whatever building.
+ *
+ * The building used to set the shape of its own box — its longest side was
+ * always the same number of units, so a square floor drew a square box and the
+ * whole figure grew a third taller than the same sheet with a long shed on it.
+ * A reader flicking between two buildings watched the paper change size rather
+ * than the building.
+ *
+ * Fixed, the way `elevationFrameY` fixes an elevation's: the frame is the same
+ * and the building is fitted into it. A long shed fills it across; a square
+ * floor draws smaller and square inside the same frame, letterboxed either
+ * side.
+ */
+export const PLAN_FRAME = { x: 74, y: 40, w: 470, h: 260 } as const;
+
+/** A building fitted into that frame: the scale, and where it lands in it. */
+export function planFit(buildingLengthFt: number, buildingWidthFt: number): {
+  sc: number; w: number; h: number; px: number; py: number;
+} {
+  // Whichever of the two runs out first, so the whole building is inside.
+  const sc = Math.min(
+    PLAN_FRAME.w / Math.max(1, buildingLengthFt),
+    PLAN_FRAME.h / Math.max(1, buildingWidthFt),
+  );
+  const w = buildingLengthFt * sc, h = buildingWidthFt * sc;
   return {
-    kind: 'row', rowPx: FIG_ROW_PX,
-    sibling: Math.max(0.3, w / h) + (mixed ? EL_ASPECT : 0),
+    sc, w, h,
+    // Centred across the frame, and stood on its floor rather than centred down
+    // it: the back wall is the line the elevations beside this stand on, so it
+    // has to be in the same place whatever shape the building is.
+    px: PLAN_FRAME.x + (PLAN_FRAME.w - w) / 2,
+    py: PLAN_FRAME.y + (PLAN_FRAME.h - h),
   };
-};
+}
+
+/**
+ * The locks that hold the frame open, whatever is drawn in it.
+ *
+ * Fitted to its contents the box would follow the building again by another
+ * route: a square floor puts its dimension lines and its margin labels in
+ * different places from a long one, and the box closes around them. These are
+ * set past the furthest any callout reaches, plus the uniform pad — a lock is a
+ * minimum, and a range the contents overrun is grown a step.
+ */
+export function planFrameX(): { x0: number; x1: number } {
+  return { x0: PLAN_FRAME.x - 76, x1: PLAN_FRAME.x + PLAN_FRAME.w + 70 };
+}
+
+/** And down, with the back wall landing where the elevations put their floor. */
+export function planFrameY(font: number): { y0: number; y1: number } {
+  const y0 = PLAN_FRAME.y - 44;
+  return { y0, y1: y0 + (PLAN_FRAME.y + PLAN_FRAME.h - y0) / floorFraction(font) };
+}
 
 /**
  * What every figure aims for, in rendered pixels.
@@ -259,6 +319,32 @@ export const elBox = (
  * drawing is the exception: it is body text, and it sits outside the SVG.
  */
 export const FIG_TEXT = { anno: 10, tiny: 10, dim: 10 } as const;
+
+/**
+ * Line weights, in screen pixels, by what the line is.
+ *
+ * Every figure stroke is drawn with `vector-effect: non-scaling-stroke` (set
+ * once in sheet.css), so these are pixels on the screen rather than units of
+ * the drawing. Sized in drawing units they grew with the figure — heavy on the
+ * sheet and twice as heavy in the expanded view — while the type beside them
+ * stayed put. Fixed in pixels, a plan reads the same weight at any size, and
+ * the order of weights is what tells one kind of line from another: the wall
+ * heaviest, then the racking, then its members, dividers lightest.
+ */
+export const STROKE = {
+  /** The building's wall, and the floor an elevation stands on. */
+  wall: 1.75,
+  /** The outline of racking: a row's faces, a tower's spine, a frame. */
+  rack: 1,
+  /** A member inside the racking: a beam, a flue, an arm, bracing. */
+  beam: 0.75,
+  /** Between bays, and between pallets in depth. */
+  divider: 0.5,
+  /** Dimension lines, their ticks and their extension lines. */
+  dim: 0.75,
+  /** Dashed lines: staging, cross aisles, the shared aisle, clear height. */
+  dash: 0.75,
+} as const;
 
 /**
  * How much larger the building's own overall dimension reads than everything
@@ -310,6 +396,18 @@ export interface FittedFigure<T> {
   aspect: number;
   /** The font size that was used, in viewBox units. */
   font: number;
+  /**
+   * The same drawing fitted to another box — the expanded view's. Drawn again
+   * rather than magnified, so type stays the sheet's size on screen and every
+   * label that decides whether it fits decides at the scale it is shown at.
+   *
+   * Fitted to its own bounds, not the sheet's frame. The frame is there so the
+   * figures on a row agree with each other — one floor line across the sheet —
+   * and the expanded view shows one figure alone, with nothing beside it to
+   * agree with. Held to the frame, a long shed sat at the foot of the window
+   * under a band of empty paper. The figure on the sheet keeps its frame.
+   */
+  refit: (box: FigBox) => FittedFigure<T>;
 }
 
 /**
@@ -352,6 +450,7 @@ export function fitFigure<T>(
   return {
     drawn: drawn as T, viewBox: fitted.viewBox,
     w: fitted.w, h: fitted.h, aspect: fitted.aspect, font,
+    refit: (other) => fitFigure(other, draw, { targetPx, measureAlso }),
   };
 }
 

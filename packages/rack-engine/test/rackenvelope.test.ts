@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  AVAILABLE_THREE_QUARTERS, DOCK_APRON_FT, LANE_CLEARANCE_IN, laneWidthFt, COLUMN_PENALTY, CROSS_AISLE_WIDTH_FT, crossAislesFor,
+  AVAILABLE_THREE_QUARTERS, DOCK_APRON_FT, LANE_CLEARANCE_IN, laneWidthFt, COLUMN_PENALTY, CROSS_AISLE_WIDTH_FT, classifyAt, crossAislesFor,
   TRUCK_AISLE_RANGE_FT, gridColumns, layoutCantileverRuns, layoutMixed, layoutRack,
   rackType, truckAisleCheck, truckAisleFt,
   type ColumnWhere, type RackLayout, type RackLayoutInput, type TruckKind,
@@ -225,11 +225,11 @@ test('shifting the block never pushes a row outside the building', () => {
 /* ── 3. cross aisles ───────────────────────────────────────────────────── */
 
 test('a row is cut into segments, one cross aisle per break', () => {
-  // a row is broken every hundred feet, so a 240 ft building's 223 ft of run
-  // becomes three segments of about 74 ft with two aisles between them
+  // no continuous run may pass 120 ft, so a 240 ft building's 223 ft of run
+  // becomes two segments of about 106 ft with one aisle between them
   const l = at();
-  assert.equal(l.crossAisles, 2, `${l.usableAlongFt.toFixed(0)} ft of run`);
-  assert.equal(l.crossAisleAtFt.length, 2);
+  assert.equal(l.crossAisles, 1, `${l.usableAlongFt.toFixed(0)} ft of run`);
+  assert.equal(l.crossAisleAtFt.length, 1);
   assert.equal(l.crossAisleWidthFt, CROSS_AISLE_WIDTH_FT);
 
   const short = at({ buildingLengthFt: 110 });
@@ -238,12 +238,21 @@ test('a row is cut into segments, one cross aisle per break', () => {
   for (const b of [140, 200, 300, 400, 600]) {
     const x = at({ buildingLengthFt: b });
     assert.equal(x.crossAisles, crossAislesFor(x.usableAlongFt), `${b} ft building`);
-    const segment = x.usableAlongFt / (x.crossAisles + 1);
-    assert.ok(segment <= 100 + 1e-9, `${b} ft: segments of ${segment.toFixed(0)} ft`);
+    // Measured off the bays actually laid, not off the arithmetic: the longest
+    // stretch of racking with no aisle in it.
+    let run = x.bayLengthFt, longest = run;
+    for (let i = 1; i < x.bayStartsFt.length; i++) {
+      const step = x.bayStartsFt[i]! - x.bayStartsFt[i - 1]!;
+      run = step > x.bayLengthFt + 1e-6 ? x.bayLengthFt : run + x.bayLengthFt;
+      longest = Math.max(longest, run);
+    }
+    assert.ok(longest <= 120 + 1e-9, `${b} ft: a continuous run of ${longest.toFixed(0)} ft`);
   }
-  assert.equal(crossAislesFor(240), 2, 'a 240 ft row gets two');
+  assert.equal(crossAislesFor(240), 1, 'a 240 ft row gets one');
+  assert.equal(crossAislesFor(300), 2, 'a 300 ft row gets two');
+  assert.equal(crossAislesFor(120), 0, 'a 120 ft row gets none');
   assert.equal(crossAislesFor(100), 0, 'a hundred-foot row gets none');
-  assert.equal(crossAislesFor(101), 1);
+  assert.equal(crossAislesFor(121), 1);
 });
 
 test('a cross aisle takes the bays it crosses, because it is a gap', () => {
@@ -479,16 +488,16 @@ test('a dealer can flip the open end, wall or no wall', () => {
  * assert it anyway, so that a scale can never be threaded in later without a
  * test going red.
  */
-test('240 x 120 packs its rows along the length: 10 rows of 24 bays', () => {
+test('240 x 120 packs its rows along the length: 10 rows of 25 bays', () => {
   const l = layoutRack('selective', base);
   assert.equal(l.rows, 10, 'ten rows across the 120 ft width');
-  assert.equal(l.bays, 24, 'twenty-four bays down the 240 ft length');
+  assert.equal(l.bays, 25, 'twenty-five bays down the 240 ft length, broken once at 120 ft');
 });
 
 test('the row-run axis is the solver’s, and turns only when asked to turn', () => {
   const along = layoutRack('selective', base);
   const across = layoutRack('selective', { ...base, orientation: 'width' });
-  assert.deepEqual([along.rows, along.bays], [10, 24]);
+  assert.deepEqual([along.rows, along.bays], [10, 25]);
   // Rows across the width give more, shorter rows. That is the orientation
   // control doing its job, and it is the only thing that may do this.
   assert.ok(across.rows > along.rows && across.bays < along.bays,
@@ -506,7 +515,7 @@ test('the same building solves identically however its figure is sized', () => {
     assert.equal(again.bays, first.bays);
     assert.equal(again.positions, first.positions);
   }
-  assert.deepEqual([first.rows, first.bays], [10, 24]);
+  assert.deepEqual([first.rows, first.bays], [10, 25]);
 });
 
 /* ── 7. a wall row is a single, and the packing is paid for as one ─────── */
@@ -632,4 +641,72 @@ test('a column in a rack is never reported as standing in an aisle', () => {
       }
     }
   }
+});
+
+/* ── a column at a bay line is only free if it fits inside the upright ──── */
+
+/**
+ * The grid the bug was found on: a 25 ft pitch against an 8.25 ft bay.
+ *
+ * Three bays is 24.75 ft, so every column lands within a few inches of a bay
+ * line — and the classifier used to wave anything within half a building column
+ * of a line through as absorbed. A floor full of obstructions came back with
+ * barely a mark on it.
+ */
+const gridded = (o: Partial<RackLayoutInput> = {}) =>
+  layoutRack('selective', { ...base, gridXFt: 20, gridYFt: 25, ...o });
+
+const inBand = (l: RackLayout) => l.columns.filter((c) => c.where === 'bay' || c.where === 'flue');
+
+test('a column inside a bay obstructs it, however near the bay line it is', () => {
+  const l = gridded();
+  const bays = l.columns.filter((c) => c.where === 'bay');
+  assert.ok(bays.length > 0, 'this grid puts columns inside bays');
+  assert.ok(bays.every((c) => !c.absorbed), 'a column in a bay is never absorbed');
+  // Every column standing in the racking is either in a flue, which is a gap
+  // the rack leaves anyway, or in a bay, which it is in the way of. Nothing is
+  // excused for being near a line.
+  for (const c of inBand(l)) {
+    assert.equal(c.absorbed, c.where === 'flue',
+      `a ${c.where} column should ${c.where === 'flue' ? '' : 'not '}be absorbed`);
+  }
+});
+
+test('the two sides of a cross aisle judge the same column the same way', () => {
+  const l = gridded();
+  const cut = l.crossAisleAtFt[0];
+  assert.ok(cut !== undefined, 'this run is split by a cross aisle');
+  const side = (keep: (x: number) => boolean) => inBand(l).filter((c) => keep(c.xFt));
+  const near = side((x) => x < cut), far = side((x) => x >= cut);
+  assert.ok(near.length > 0 && far.length > 0, 'both modules carry columns');
+  // Staging and the cross aisle give the two modules different bay phase, so a
+  // tolerance around the bay line let one module off and not the other: one
+  // came back clear, the other mixed, for the same grid.
+  for (const [name, cols] of [['near', near], ['far', far]] as const) {
+    assert.ok(cols.some((c) => c.where === 'bay'),
+      `the ${name} module reports obstructions rather than reading clear`);
+  }
+});
+
+test('a grid pitched at a whole number of bays is not waved through', () => {
+  // 24.75 ft is exactly three bays, the worst case: every column sits on a line.
+  const l = gridded({ gridXFt: 24.75 });
+  const cols = inBand(l);
+  const absorbed = cols.filter((c) => c.absorbed).length;
+  assert.ok(cols.length > 0, 'this grid puts columns in the racking');
+  assert.ok(absorbed * 2 <= cols.length,
+    `at least half the columns in the racking obstruct it, got ${absorbed} of ${cols.length}`);
+});
+
+test('a deeper upright covers more, and a shallower one less', () => {
+  const bands = [{ start: 0, depth: 3.5 }];
+  const ground = (uprightIn: number) => ({
+    bands, flues: [], aisles: [],
+    moduleStartsFt: [0, 8.25, 16.5], moduleLengthFt: 8.25,
+    uprightIn, orientation: 'length' as const, wallClearanceFt: 2.5,
+  });
+  // A column centred on the bay line at 8.25 ft, across the middle of the row.
+  const at = (uprightIn: number) => classifyAt(8.25, 1.75, ground(uprightIn)).where;
+  assert.equal(at(3), 'bay', 'a 12 in column does not fit inside a 3 in upright');
+  assert.equal(at(48), 'flue', 'an upright wider than the column does take it round');
 });

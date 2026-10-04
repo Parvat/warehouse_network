@@ -5,11 +5,11 @@ import {
   DOCK_APRON_FT, rackType, type MixedLayout, type Orientation, type RackKind,
 } from '@trace/rack-engine';
 import BuildingShell, { measureShell } from './BuildingShell';
-import { columnMarks } from './ColumnMarks';
-import { FigBoxEl, PlanHead, type LegendItem } from './figBox';
+import { FigBoxEl, FigExpand, PlanHead, type LegendItem } from './figBox';
 import {
-  aisleLabelFits, centeredCrossAisleFt, floorFraction, insideAisleLabel, outsideRowLabel, planBox, fitFigure,
+  centeredCrossAisleFt, floorFraction, planFit, planFrameX, planFrameY, planBox, fitFigure,
   type Extent, type FigBox,
+  STROKE,
 } from './figText';
 
 /**
@@ -49,7 +49,9 @@ export interface MixedPlanProps {
 function MixedPlan(p: MixedPlanProps) {
   const M = p.mixed, S = M.strip, L = M.pallets;
   const R = rackType(p.kind);
-  const PX = 74, PY = 40;
+  // Fig. 1 is drawn in a fixed frame and the building is fitted into it, so
+  // its box is one shape whatever is on the floor. See `planFit`.
+  const { sc, w: W, h: H, px: PX, py: PY } = planFit(p.buildingLengthFt, p.buildingWidthFt);
 
   // The building never turns: length across the page, width down it. Only the
   // racking turns, so everything inside the walls is laid out in (along,
@@ -58,9 +60,6 @@ function MixedPlan(p: MixedPlanProps) {
   // The scale is internal and only that: the building's longest side is always
   // this many units, so the margins and the labels carry the same weight in a
   // 400 x 100 shed as in a square one. The viewBox is fitted afterwards.
-  const NOMINAL = 470;
-  const sc = NOMINAL / Math.max(p.buildingLengthFt, p.buildingWidthFt);
-  const W = p.buildingLengthFt * sc, H = p.buildingWidthFt * sc;
   const vertical = p.orientation === 'width';
   const apron = DOCK_APRON_FT * sc;
 
@@ -75,6 +74,15 @@ function MixedPlan(p: MixedPlanProps) {
     : { x: PX + aPx, y: PY + cPx, width: aLenPx, height: cLenPx });
   const box = (aFt: number, aLenFt: number, cFt: number, cLenFt: number) =>
     at(aFt * sc, aLenFt * sc, cFt * sc, cLenFt * sc);
+  /**
+   * A frame across a row at `bPx` along it: a divider between bays, standing a
+   * unit proud of each face so it reads as the upright it is. A line rather than
+   * a filled bar, so it keeps its screen weight at any size — see `STROKE`.
+   */
+  const frameAt = (bPx: number, cFt: number, thickFt: number) => {
+    const r = at(bPx, 0, cFt * sc - 1, thickFt * sc + 2);
+    return { x1: r.x, y1: r.y, x2: r.x + r.width, y2: r.y + r.height };
+  };
   const seg = (aFt: number, aLenFt: number, cFt: number, cLenFt: number) => {
     const r = box(aFt, aLenFt, cFt, cLenFt);
     return { x1: r.x, y1: r.y, x2: r.x + r.width, y2: r.y + r.height };
@@ -137,24 +145,7 @@ function MixedPlan(p: MixedPlanProps) {
     cursor += dir * ft;
     return start;
   };
-  /**
-   * An aisle width, inside the gap it dimensions rather than past the
-   * building — see `insideAisleLabel` — or past it, on a building large
-   * enough that this aisle no longer has room on screen for its own label —
-   * see `aisleLabelFits`. Near the entrance, where the floor is always real
-   * racking rather than a cross aisle. `cFt` is the aisle's own start, across
-   * the rows.
-   */
-  const aisleLabel = (cFt: number, aisleFt: number) => {
-    const text = `${aisleFt}′`;
-    const acrossPx = (cFt + aisleFt / 2) * sc;
-    const o = box(alongStartFt + 4, 0, cFt + aisleFt / 2, 0);
-    const lbl = aisleLabelFits({ aisleFt, sc, size: fAnno })
-      ? insideAisleLabel(ext, { vertical, x: o.x, y: o.y, text, size: fAnno })
-      : outsideRowLabel(ext, { vertical, px: PX, py: PY, w: W, h: H, acrossPx, text, size: fAnno, fill: BLUE });
-    parts.push(<text key={key++} {...lbl}
-      fontFamily="JetBrains Mono" fontSize={fAnno} fill={BLUE}>{aisleFt}&#8242;</text>);
-  };
+  // No width on each aisle — the run summary says it once for the floor.
 
   /* ── the strip ───────────────────────────────────────────────────────── */
 
@@ -179,11 +170,11 @@ function MixedPlan(p: MixedPlanProps) {
       for (let t = 0; t < S.towersPerRun; t++) {
         const tA = towerA + t * S.towerCentresFt;
         parts.push(
-          <line key={key++} {...seg(tA, 0, armC0, armC1 - armC0)} stroke={ARM} strokeWidth={0.9} />,
+          <line key={key++} {...seg(tA, 0, armC0, armC1 - armC0)} stroke={ARM} strokeWidth={STROKE.beam} />,
           <rect key={key++} {...at(tA * sc - 1.4, 2.8, colC * sc - 2.2, 4.4)} fill={G} />,
         );
       }
-      parts.push(<line key={key++} {...seg(towerA, S.spanFt, colC, 0)} stroke={G} strokeWidth={1.8} />);
+      parts.push(<line key={key++} {...seg(towerA, S.spanFt, colC, 0)} stroke={G} strokeWidth={STROKE.rack} />);
     }
     // No per-row label: "2 sides" used to be called out here, in the margin
     // past the wall, and a run of many interior rows put one there for every
@@ -198,8 +189,7 @@ function MixedPlan(p: MixedPlanProps) {
     const sides: 1 | 2 = r === 0 ? 1 : 2;
     cantRow(take(sides === 2 ? S.doubleDepthFt : S.singleDepthFt), sides, r);
     if (r < M.cantileverRows - 1) {
-      const ay = take(M.cantileverAisleFt);
-      aisleLabel(ay, M.cantileverAisleFt);
+      take(M.cantileverAisleFt);
     }
   }
 
@@ -211,42 +201,14 @@ function MixedPlan(p: MixedPlanProps) {
   const near = box(alongStartFt, 0, midC, 0);
   parts.push(
     <line key={key++} x1={divider.x1} y1={divider.y1} x2={divider.x2} y2={divider.y2}
-      stroke={RED} strokeWidth={0.7} strokeDasharray="2 3" opacity={0.75} />,
+      stroke={RED} strokeWidth={STROKE.dash} strokeDasharray="2 3" opacity={0.75} />,
   );
-  /**
-   * A zone's name, in the left margin beside the zone it names.
-   *
-   * Written across the racking it was unreadable and it hid what it labelled —
-   * a caption over the thing is not a caption. Out here it reads the way
-   * STAGING does: turned on its side, clear of the building outline, spanning
-   * the zone it belongs to.
-   */
-  const zoneLabel = (text: string, fromC: number, toC: number) => {
-    const a = box(alongStartFt, 0, fromC, 0), b = box(alongStartFt, 0, toC, 0);
-    const mid = vertical ? (a.x + b.x) / 2 : (a.y + b.y) / 2;
-    const x = vertical ? mid : PX - 42;
-    // Clear of the length dimension, which is ruled at PY-18 and labelled at
-    // PY-24 — a zone name at PY-30 landed on the number.
-    const y = vertical ? PY - 42 : mid;
-    // Across the width the zones stack along the page, so the label lies flat
-    // above the building instead; along it they stack down the left margin.
-    if (vertical) {
-      ext.text({ x, y, size: fAnno, text, anchor: 'middle' });
-      parts.push(<text key={key++} x={x} y={y} textAnchor="middle"
-        fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}>{text}</text>);
-    } else {
-      ext.text({ x, y, size: fAnno, text, anchor: 'middle', rotate: -90 });
-      parts.push(<text key={key++}
-        transform={`translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(-90)`}
-        textAnchor="middle" fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}>{text}</text>);
-    }
-  };
   // The strip is on the wall the layout put it on; the pallet zone is the
-  // rest, and the shared aisle's centre is the line between them.
+  // rest, and the shared aisle's centre is the line between them. The zones
+  // are not named in the margin: the legend's swatches already tell them apart,
+  // and on a long building the names ran into STAGING.
   const stripC = dir === 1 ? [p.wallClearanceFt, midC] : [midC, acrossEndFt];
   const palletC = dir === 1 ? [midC, acrossEndFt] : [p.wallClearanceFt, midC];
-  zoneLabel('CANTILEVER STRIP', stripC[0]!, stripC[1]!);
-  zoneLabel('PALLET RACKING', palletC[0]!, palletC[1]!);
 
   // dimensioned at its true width, because that width is what the strip costs
   // Along the rows the dimension sits near the far end; across them it runs up
@@ -260,16 +222,17 @@ function MixedPlan(p: MixedPlanProps) {
   const inset = vertical ? 4 : 14;
   const dimA = Math.min(
     (vertical ? p.buildingWidthFt : p.buildingLengthFt) - p.wallClearanceFt,
-    alongStartFt + S.usableAlongFt,
+    // the shorter zone's end: past it, one side of the shared aisle is hatched
+    alongStartFt + Math.min(S.usableAlongFt, L.usableAlongFt),
   ) - inset;
   const dim = seg(dimA, 0, shC, M.sharedAisleFt);
   const tick0 = seg(dimA - 3, 6, shC, 0);
   const tick1 = seg(dimA - 3, 6, shC + M.sharedAisleFt, 0);
   const lab = box(dimA - 4, 0, midC, 0);
   over.push(
-    <line key={key++} x1={dim.x1} y1={dim.y1} x2={dim.x2} y2={dim.y2} stroke={BLUE} />,
-    <line key={key++} x1={tick0.x1} y1={tick0.y1} x2={tick0.x2} y2={tick0.y2} stroke={BLUE} />,
-    <line key={key++} x1={tick1.x1} y1={tick1.y1} x2={tick1.x2} y2={tick1.y2} stroke={BLUE} />,
+    <line key={key++} x1={dim.x1} y1={dim.y1} x2={dim.x2} y2={dim.y2} stroke={BLUE} strokeWidth={STROKE.dim} />,
+    <line key={key++} x1={tick0.x1} y1={tick0.y1} x2={tick0.x2} y2={tick0.y2} stroke={BLUE} strokeWidth={STROKE.dim} />,
+    <line key={key++} x1={tick1.x1} y1={tick1.y1} x2={tick1.x2} y2={tick1.y2} stroke={BLUE} strokeWidth={STROKE.dim} />,
     vertical
       ? <text key={key++} transform={`translate(${(lab.x - 4).toFixed(1)} ${lab.y.toFixed(1)}) rotate(-90)`}
           textAnchor="start" fontFamily="JetBrains Mono" fontSize={fAnno} fill={BLUE}>
@@ -300,11 +263,11 @@ function MixedPlan(p: MixedPlanProps) {
     for (const bs of L.bayStartsFt) {
       const a0 = alongStartFt + bs;
       parts.push(<rect key={key++} {...box(a0, L.bayLengthFt, cFt, thickFt)}
-        fill={FILL} stroke={G} strokeWidth={0.9} />);
+        fill={FILL} stroke={G} strokeWidth={STROKE.rack} />);
       for (let q = 1; q < nDeep; q++) {
         const l = seg(a0, L.bayLengthFt, cFt + (thickFt * q) / nDeep, 0);
         parts.push(<line key={key++} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-          stroke={G} strokeWidth={0.55} strokeDasharray="5 3" />);
+          stroke={G} strokeWidth={STROKE.divider} strokeDasharray="5 3" />);
       }
       // A frame at the end of every bay, and at the start of every bay that
       // opens a segment — the first, and the first after each cross aisle.
@@ -312,8 +275,8 @@ function MixedPlan(p: MixedPlanProps) {
       const opensSegment = prev === undefined || bs - prev > L.bayLengthFt + 0.01;
       for (const k of opensSegment ? [0, 1] : [1]) {
         const bPx = (a0 + k * L.bayLengthFt) * sc;
-        parts.push(<rect key={key++}
-          {...at(bPx - 0.8, 1.6, cFt * sc - 1, thickFt * sc + 2)} fill={G} />);
+        parts.push(<line key={key++}
+          {...frameAt(bPx, cFt, thickFt)} stroke={G} strokeWidth={STROKE.divider} />);
       }
     }
   };
@@ -348,8 +311,7 @@ function MixedPlan(p: MixedPlanProps) {
         }
       }
       band(fc + fh, deep * fd, deep);
-      const ac = take(p.aisleFt);
-      aisleLabel(ac, p.aisleFt);
+      take(p.aisleFt);
     }
     // the far wall is a real wall, so its row is single
     if (L.wallRows > 0) {
@@ -387,10 +349,16 @@ function MixedPlan(p: MixedPlanProps) {
 
 
   /* the floor the customer said is not available, and the circulation that
-     comes off the run — both are already out of the count, so they are drawn */
-  if (S.unavailableAlongFt > 0.01) {
-    const u = box(alongStartFt + S.usableAlongFt, S.unavailableAlongFt,
-      p.wallClearanceFt, S.acrossFt);
+     comes off the run — both are already out of the count, so they are drawn.
+
+     Per zone, from where each zone's own racking has to stop. With the floor
+     given as an area, the pallet zone is narrower than the building and so
+     runs further along it than the strip does; one hatch from the strip's end
+     across the whole floor painted over the pallet rows that were really
+     there. The lengths are the engine's, one for each zone. */
+  const hatch = (fromFt: number, lenFt: number, c0: number, c1: number, label: boolean) => {
+    if (lenFt <= 0.01 || c1 - c0 <= 0.01) return;
+    const u = box(alongStartFt + fromFt, lenFt, c0, c1 - c0);
     parts.push(<rect key={key++} {...u} fill="#EFEDE6" stroke="#CFCabd" strokeWidth={0.8} />);
     for (let d = -u.height; d < u.width; d += 7) {
       const x1 = Math.max(u.x, u.x + d), y1 = Math.max(u.y, u.y - d);
@@ -400,12 +368,20 @@ function MixedPlan(p: MixedPlanProps) {
           stroke="#CFCabd" strokeWidth={0.6} />);
       }
     }
-    parts.push(<text key={key++} x={u.x + u.width / 2} y={u.y + u.height / 2 + 3}
-      textAnchor="middle" fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}
-      transform={vertical ? undefined
-        : `rotate(-90 ${(u.x + u.width / 2).toFixed(1)} ${(u.y + u.height / 2).toFixed(1)})`}>
-      NOT AVAILABLE FOR RACK</text>);
-  }
+    // Named once, on the wider band; the narrow strip band reads by its hatch.
+    if (label) {
+      parts.push(<text key={key++} x={u.x + u.width / 2} y={u.y + u.height / 2 + 3}
+        textAnchor="middle" fontFamily="JetBrains Mono" fontSize={fAnno} fill={MUT}
+        transform={vertical ? undefined
+          : `rotate(-90 ${(u.x + u.width / 2).toFixed(1)} ${(u.y + u.height / 2).toFixed(1)})`}>
+        NOT AVAILABLE FOR RACK</text>);
+    }
+  };
+  // Each zone's band is the one its label spans, so the two hatches meet on
+  // the shared aisle's centre line, where the drawing already divides them.
+  const stripWide = stripC[1]! - stripC[0]! > palletC[1]! - palletC[0]!;
+  hatch(S.usableAlongFt, S.unavailableAlongFt, stripC[0]!, stripC[1]!, stripWide);
+  hatch(L.usableAlongFt, L.unavailableAlongFt, palletC[0]!, palletC[1]!, !stripWide);
 
   /* A cross aisle is a route through the building, not a gap in a zone. The
      solver puts both zones' aisles at the same feet — one calculation, from
@@ -429,10 +405,17 @@ function MixedPlan(p: MixedPlanProps) {
       atFt: a, widthFt: L.crossAisleWidthFt, endsBeforeFt, startsAfterFt,
     });
     // Wall to wall: a route across the floor runs the whole width, and the
-    // strip of clearance along each wall is part of it.
-    const r = box(alongStartFt + centredA, L.crossAisleWidthFt,
-      0, vertical ? p.buildingLengthFt : p.buildingWidthFt);
-    parts.push(<rect key={key++} {...r} fill="#fff" stroke={BLUE} strokeWidth={0.6}
+    // strip of clearance along each wall is part of it. An aisle past the
+    // shorter zone's end does not reach that zone — the engine says so by
+    // where the zone stops — so it runs only from the other zone's wall to the
+    // line between them, rather than across floor that is not racked.
+    const wallFt = vertical ? p.buildingLengthFt : p.buildingWidthFt;
+    const inStrip = a < S.usableAlongFt, inPallets = a < L.usableAlongFt;
+    const stripSide: [number, number] = dir === 1 ? [0, midC] : [midC, wallFt];
+    const palletSide: [number, number] = dir === 1 ? [midC, wallFt] : [0, midC];
+    const [c0, c1] = inStrip && inPallets ? [0, wallFt] : inStrip ? stripSide : palletSide;
+    const r = box(alongStartFt + centredA, L.crossAisleWidthFt, c0, c1 - c0);
+    parts.push(<rect key={key++} {...r} fill="#fff" stroke={BLUE} strokeWidth={STROKE.dash}
       strokeDasharray="3 2" />);
     if (i === 0) {
       const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
@@ -443,14 +426,6 @@ function MixedPlan(p: MixedPlanProps) {
     }
   });
 
-  // The mixed floor's own columns, not the strip's: the strip alone sees the
-  // pallet zone as open floor and would call every column standing in it an
-  // obstruction. `layoutMixed` judges them against both zones at once.
-  {
-    const cols = columnMarks({ columns: M.columns, px: PX, py: PY, sc, individually: true, keyFrom: key });
-    key += cols.length;
-    parts.push(...cols);
-  }
 
     return (
       <>
@@ -461,8 +436,10 @@ function MixedPlan(p: MixedPlanProps) {
       </>
     );
   }, {
-    // The back wall of the building is this drawing's floor, and it is the
-    // line the elevations beside it stand their own floors on.
+    lockX: planFrameX,
+    lockY: planFrameY,
+    // Held as well as locked: if anything ever outgrows the frame above,
+    // the back wall still lands on the line the elevations stand on.
     floorAt: (font) => ({ y: PY + H, fraction: floorFraction(font) }),
   });
 
@@ -488,7 +465,13 @@ function MixedPlan(p: MixedPlanProps) {
   }
 
   return (
-    <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={<PlanHead lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} legend={legend} />}>
+    <FigBoxEl aspect={fit.aspect} className={p.boxClass} head={<PlanHead lengthFt={p.buildingLengthFt} widthFt={p.buildingWidthFt} legend={legend} />}
+      info={(
+        <FigExpand label={`Plan — ${p.buildingLengthFt} × ${p.buildingWidthFt} ft`}
+          viewBox={fit.viewBox} aspect={fit.aspect} refit={fit.refit}>
+          {fit.drawn}
+        </FigExpand>
+      )}>
       <svg id="plan" viewBox={fit.viewBox}
         style={{ aspectRatio: String(fit.aspect) }}
         preserveAspectRatio="xMidYMid meet" role="img"

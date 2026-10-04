@@ -13,13 +13,17 @@
 .a3 h1,.a3 h2,.a3 h3{font-family:'Oswald',sans-serif;font-weight:700;line-height:.98;text-transform:uppercase}
 .a3 .mono{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums}
 .a3{--zinc:#F4F3EE;--zinc-2:#EAE8E1;--paper:#FFFFFF;--pine:#14392B;--pine-2:#1D5340;--mint:#E8EFEA;
---ink:#1A1D1B;--ink-2:#3E453F;--steel:#6B726C;--blue:#1B4FD8;--yellow:#F2C230;--flag:#A8341C;--line:#DAD7CE}
+--ink:#1A1D1B;--ink-2:#3E453F;--steel:#6B726C;--blue:#1B4FD8;--yellow:#F2C230;--flag:#A8341C;--line:#DAD7CE;
+--sage:#5F8570}
 /* The face for anything holding a value you typed or picked: the CSS generic
    `monospace`, deliberately, not the app's --ff-mono. That token resolves to
    JetBrains Mono, which is the sheet's face for *figures* — dimensions on the
    drawings, the run summary, the placard. A field is a different thing from a
    figure, and it reads as one in the reader's own fixed-width font. */
 .a3{--ff-field:monospace}
+/* The sheet's graph paper, once: the drawing stage and the column the schedule
+   stands in are ruled from this, so their lines cannot drift apart. */
+.a3{--sheet-grid:linear-gradient(var(--zinc-2) 1px,transparent 1px) 0 0/100% 24px,linear-gradient(90deg,var(--zinc-2) 1px,transparent 1px) 0 0/24px 100%,var(--paper)}
 .a3 .tbar{border-bottom:2px solid var(--ink);background:var(--zinc);position:sticky;top:0;z-index:30}
 .a3 .tbar .wrap{display:grid;grid-template-columns:auto 1fr auto auto auto;height:60px}
 .a3 .tcell{display:flex;flex-direction:column;justify-content:center;padding:0 20px;border-right:1px solid var(--line)}
@@ -48,16 +52,34 @@
    rather than making the row taller than the drawing beside it — the same trick
    the flag column uses, and the reason both columns end on one line. */
 .a3 .panel{position:relative;min-height:340px}
+/* A mixed floor asks every question both families have, and its drawing row is
+   the shortest on the sheet — three figures share the width that gives it its
+   height. There the panel goes back into the flow and sets the row instead, so
+   the schedule is never scrolled; the drawings keep their own size and simply
+   stand in a taller stage. Pallets and Long still fit beside their drawings. */
+.a3 .panel.tall{display:flex;flex-direction:column}
+.a3 .panel.tall .panelinner{position:relative;inset:auto;flex:1 0 auto;overflow:visible}
+/* The schedule fills the whole height of the row, so the room under the last
+   field is the panel itself rather than a gap beside the drawing. */
 .a3 .panelinner{position:absolute;inset:0;display:flex;flex-direction:column;
-  overflow-y:auto;overflow-x:hidden;border:1px solid var(--ink);background:var(--paper);
-  scrollbar-width:thin}
+  overflow-y:auto;overflow-x:hidden;border:1px solid var(--ink);
+  /* White through the top third, where most of the questions are, then easing
+     to paper and a light sage only towards the foot of the panel. */
+  background:linear-gradient(180deg,#FFFFFF 0%,#FFFFFF 35%,#F2F1EC 70%,#E6ECE4 100%);
+  scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+/* Only a very small screen should ever need it; when one does, it is a hairline
+   in the panel's own palette rather than the system's grey bar. */
+.a3 .panelinner::-webkit-scrollbar{width:6px}
+.a3 .panelinner::-webkit-scrollbar-track{background:transparent}
+.a3 .panelinner::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+.a3 .panelinner::-webkit-scrollbar-thumb:hover{background:var(--steel)}
 /* One panel, three groups, a hairline between them — not three cards. */
-.a3 .pgrp{padding:0 12px 10px;border-bottom:1px solid var(--line)}
+.a3 .pgrp{padding:0 12px 12px;border-bottom:1px solid var(--line)}
 .a3 .pgrp:last-child{border-bottom:0}
 /* The heading is the control that folds the group, so it behaves like one:
    full width, a pointer, and a target the whole strip wide rather than a
    chevron somebody has to aim at. */
-.a3 .pgrp .grptitle{display:flex;width:100%;padding:8px 0 2px;gap:6px;
+.a3 .pgrp .grptitle{display:flex;width:100%;padding:10px 0 2px;gap:6px;line-height:1.2;
   background:none;border:0;text-align:left;cursor:pointer;color:inherit}
 .a3 .pgrp .grptitle:hover h3{color:var(--pine)}
 .a3 .pgrp .grptitle:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
@@ -70,8 +92,15 @@
 /* Folded, the group is a heading and nothing else: the padding that sat under
    its fields would otherwise leave a gap under the title. */
 .a3 .pgrp.shut{padding-bottom:0}
-.a3 .pgrp.shut .grptitle{padding-bottom:8px}
-.a3 .pgrp .subhead{padding:7px 0 0;border-top:0;margin-top:3px}
+.a3 .pgrp.shut .grptitle{padding-bottom:12px}
+/* The middle of the three levels: a group inside a section — "Pallet racking",
+   "Cantilever". Set in the body face, which is how it reads as a heading over
+   fields rather than as one more field label, and run into a hairline so it
+   says where its fields begin. */
+.a3 .pgrp .glabel{display:flex;align-items:center;gap:8px;margin-top:11px;
+  font-family:var(--ff-body);font-weight:600;font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--ink);line-height:1}
+.a3 .pgrp .glabel:after{content:'';flex:1;height:1px;background:var(--line)}
 /* Rows of equal cells. Nothing in the panel carries a width of its own: a
    control fills the cell it is given, so a row of four and a row of three both
    come out even and the panel has one left edge and one right edge. */
@@ -80,37 +109,74 @@
 .a3 .row.r2{grid-template-columns:repeat(2,minmax(0,1fr))}
 .a3 .row.r3{grid-template-columns:repeat(3,minmax(0,1fr))}
 .a3 .row.r4{grid-template-columns:repeat(4,minmax(0,1fr))}
+/* The pallet's four figures, with the weight given the room a four-figure load
+   and its unit need — "3000 lb" in full, never "300…". */
+.a3 .row.r4w{grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,1.45fr)}
+/* What is stored and which way it runs, on one line: the three-way switch takes
+   most of it and the two-way toggle the rest. */
+.a3 .row.rstore{grid-template-columns:minmax(0,62fr) minmax(0,38fr)}
 .a3 .row>.f{width:auto;min-width:0}
 .a3 .row .segs{width:100%}
 .a3 .row .segs button{flex:1 1 0;min-width:0;padding:0 4px;overflow:hidden}
 .a3 .grptitle{display:flex;align-items:baseline;gap:7px;padding:10px 14px 5px;flex-wrap:wrap}
 .a3 .grptitle .no{font-family:'JetBrains Mono';font-size:10px;color:var(--blue);letter-spacing:.14em}
-.a3 .grptitle h3{font-size:13px;letter-spacing:.03em}
+.a3 .grptitle h3{font-size:13px;font-weight:600;letter-spacing:.03em}
 .a3 .grptitle .note{font-size:11px;color:var(--steel);letter-spacing:0;text-transform:none;font-family:var(--ff-body)}
 .a3 /* fields share their group's width but never squeeze below their content */
-.f{display:flex;flex-direction:column;gap:3px;flex:1 1 auto;min-width:52px}
+.f{display:flex;flex-direction:column;gap:5px;flex:1 1 auto;min-width:52px}
 .a3 .f.w4{min-width:62px}
 .a3 .f.wcombo{min-width:70px}
 .a3 .f.w{flex:0 0 auto;min-width:0}
-/* Labels stay in the sheet's own JetBrains Mono, as the rest of the sheet's
-   small caps do. The boxes under them are --ff-field instead, so the two are
-   told apart by the face rather than by position alone. */
-.a3 .f label{font-family:var(--ff-mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--steel);margin:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Mono is for numbers and nothing else. A label is a word, so it is set in the
+   sans — small, light and spaced, a step below the value under it, so the eye
+   lands on the figure and reads the name only when it needs to. */
+.a3 .f label{font-family:var(--ff-body);font-weight:500;font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--steel);margin:0;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .a3 .f input::-webkit-outer-spin-button,.a3 .f input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .a3 .f input[type=number]{-moz-appearance:textfield;appearance:textfield}
 .a3 .f select{cursor:pointer}
 /* The option list a select drops needs telling too: Chrome renders the popup in
    the system UI face whatever the select itself says, so the closed box and the
    open list came out in two different faces. */
-.a3 .f input,.a3 .f select{width:100%;height:26px;padding:0 6px;border:1px solid var(--line);background:var(--zinc-2);border-radius:2px;font-family:var(--ff-field);font-size:12.5px;color:var(--ink);text-align:center}
-.a3 .f select{text-align:left;padding-right:2px}
-.a3 .f select option{font-family:var(--ff-field);font-size:12.5px}
-.a3 .f input:focus,.a3 .f select:focus{outline:2px solid var(--blue);background:#fff}
+/* One control family. Inputs, selects, the segmented switches and the toggle
+   are the same box — 28px, one hairline, one fill, a 2px corner — and every
+   value starts at the left, so a column of fields reads down one edge. */
+.a3 .f input,.a3 .f select{width:100%;height:28px;padding:0 7px;border:1px solid var(--line);background:var(--zinc-2);border-radius:2px;font-family:var(--ff-mono);font-weight:500;font-size:13.5px;color:var(--ink);text-align:left}
+/* A select whose options are words — the truck — reads in the sans, at the
+   toggles' size: a word at a figure's 13.5px ran under the chevron. One whose
+   options are figures — the beam — keeps the mono with the other numbers. */
+.a3 .f select.words{font-family:var(--ff-body);font-size:12px}
+/* The box a control sits in, so a unit and a chevron can be set inside it. */
+.a3 .f .fbox{position:relative;width:100%}
+/* The unit after the value: faint, out of the way of the pointer, and the
+   control padded clear of it by the unit's own length. */
+.a3 .f .fbox .unit{position:absolute;top:50%;right:7px;transform:translateY(-50%);
+  font-family:var(--ff-body);font-weight:400;font-size:10px;color:var(--steel);opacity:.75;
+  pointer-events:none;line-height:1}
+.a3 .f .fbox.hasunit input{padding-right:calc(var(--u) * 6px + 12px)}
+/* A chevron of the sheet's own instead of the system arrow, which drew in a
+   different weight on every platform. */
+.a3 .f .fbox.sel select{appearance:none;-webkit-appearance:none;padding-right:22px;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%236B726C' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 8px center;background-size:10px 6px}
+.a3 .f .fbox.sel.hasunit select{padding-right:calc(var(--u) * 6px + 30px)}
+.a3 .f .fbox.sel .unit{right:24px}
+/* A two-state answer, sized and set exactly like the boxes beside it: it is a
+   field on the schedule, not a control bolted to one. */
+.a3 .f .toggle{width:100%;height:28px;padding:0 7px;cursor:pointer;
+  border:1px solid var(--line);background:var(--zinc-2);border-radius:2px;
+  font-family:var(--ff-body);font-weight:500;font-size:12px;color:var(--ink);text-align:left;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.a3 .f .toggle:hover{border-color:var(--blue);color:var(--blue)}
+.a3 .f .toggle:focus-visible{outline:1px solid var(--blue);outline-offset:1px}
+.a3 .f select option{font-family:var(--ff-mono);font-size:13.5px}
+.a3 .f select.words option{font-family:var(--ff-body)}
+.a3 .f input:focus,.a3 .f select:focus{outline:2px solid var(--blue);background-color:#fff}
 .a3 .f[hidden]{display:none}
 .a3 .f.hot label{color:var(--blue)}
 .a3 .segs{display:flex}
-.a3 .segs button{border:1px solid var(--line);border-right:0;background:var(--zinc-2);padding:0 9px;height:26px;cursor:pointer;font-family:var(--ff-field);font-size:10px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-2);white-space:nowrap}
-.a3 .segs button:last-child{border-right:1px solid var(--line)}
+.a3 .segs button{border:1px solid var(--line);border-right:0;background:var(--zinc-2);padding:0 9px;height:28px;cursor:pointer;font-family:var(--ff-body);font-weight:500;font-size:12px;color:var(--ink-2);white-space:nowrap}
+.a3 .segs button:last-child{border-right:1px solid var(--line);border-radius:0 2px 2px 0}
+.a3 .segs button:first-child{border-radius:2px 0 0 2px}
 .a3 .segs button[aria-pressed="true"]{background:var(--pine);color:#fff;border-color:var(--pine)}
 .a3 .derive{margin:0 16px 14px;padding:8px 11px;background:var(--zinc-2);border-left:3px solid var(--blue);font-size:12.5px;color:var(--ink-2)}
 .a3 .derive b{font-family:'JetBrains Mono';color:var(--ink)}
@@ -132,14 +198,9 @@
   color:var(--pine);line-height:1.8}
 .a3 .runsummary b{font-weight:700;color:var(--pine-2)}
 .a3 .runsummary i{font-style:normal;color:var(--pine);opacity:.45;margin:0 .45em}
-.a3 .stage{padding:12px;border:1px solid var(--line);background:linear-gradient(var(--zinc-2) 1px,transparent 1px) 0 0/100% 24px,linear-gradient(90deg,var(--zinc-2) 1px,transparent 1px) 0 0/24px 100%,var(--paper)}
+.a3 .stage{padding:12px;border:1px solid var(--line);background:var(--sheet-grid)}
 .a3 .figs{display:flex;gap:24px;align-items:stretch;justify-content:center;flex-wrap:nowrap}
 .a3 .figbox{display:flex;flex-direction:column;min-width:0;position:relative}
-.a3 .dealer{padding:22px 18px;text-align:center}
-.a3 .dealer p{font-size:13.5px;color:var(--ink-2);max-width:58ch;margin:0 auto}
-.a3 .dealer b{display:block;font-family:'Oswald';font-weight:700;text-transform:uppercase;font-size:17px;color:var(--ink);margin-bottom:7px}
-.a3 .dealer button{margin-top:14px;border:1px solid var(--pine);background:var(--pine);color:#fff;border-radius:2px;
-  height:40px;padding:0 20px;cursor:pointer;font-family:var(--ff-body);font-size:14px;font-weight:500}
 
 /* Fig. 1 and Fig. 2 share a row, so they share a height: a fixed box rather
    than a max, or a wide building draws a short plan beside a tall elevation and
@@ -188,46 +249,49 @@
 .a3 .flag b i{font-style:normal;opacity:.75}
 .a3 .flag.warn{border-left-color:#C07A12;background:#F8F0DF;color:#6B4A0B}
 .a3 .flag.note{border-left-color:var(--blue);background:#E9EEFB;color:#1B3A8C}
+
+/* Trade knowledge rather than a finding about this building, so it is calmer
+   than the amber of a check and the blue of an opportunity: the sheet's own
+   green, saying context rather than attention. */
+.a3 .flag.know{border-left-color:var(--sage);background:#EDF2EE;color:#2C4535}
+/* Except the one that is about what this sheet does not do, which keeps the
+   check's marker inside the calmer card. */
+.a3 .flag.know b i.knowwarn{font-style:normal;opacity:1;color:#C07A12}
 .a3 .flagcount{display:flex;gap:12px;font-family:'JetBrains Mono';font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--steel);margin-bottom:9px;padding-bottom:7px;border-bottom:1px solid var(--line)}
 .a3 .flagcount span b{font-weight:600;color:var(--ink)}
+
+/* The tally is the way into the column, not a readout over it. Each count is a
+   tab: press one and the column is that severity. Only the severities the sheet
+   has appear — a tab reading zero can only empty the column. */
+.a3 .flagtab{padding:2px 7px;cursor:pointer;border:1px solid transparent;border-radius:2px;
+  background:none;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit}
+.a3 .flagtab b{font-weight:600;color:var(--ink)}
+.a3 .flagtab:hover:not(:disabled){border-color:var(--line);color:var(--ink)}
+.a3 .flagtab:focus-visible{outline:1px solid var(--blue);outline-offset:1px}
+/* Hover outranks a plain class, so the active tab names its hover too — left to
+   the rule above, it set ink text on the ink ground and the label vanished. */
+.a3 .flagtab.on,.a3 .flagtab.on:hover:not(:disabled){background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.a3 .flagtab.on b{color:var(--paper)}
 .a3 .summary{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:18px;border-top:2px solid var(--ink);padding:16px 18px;align-items:start}
 .a3 .summary .flags:empty:after{content:'No flags — nothing here needs a second look.';font-size:12.5px;color:var(--steel);display:block;padding-top:4px}
-.a3 .bom{margin-top:56px;border:2px solid var(--ink);background:var(--paper)}
-.a3 .bomhead{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:14px 18px;border-bottom:2px solid var(--ink)}
-.a3 .bomhead h2{font-size:26px}
-.a3 .bomhead .sub{font-family:'JetBrains Mono';font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--steel)}
-/* The whole header row toggles, so it is one button spanning the row; the
-   chevron is left as the indicator it always looked like. */
-.a3 .bomtog{display:flex;align-items:baseline;gap:12px;flex:1 1 auto;min-width:0;
-  margin:-14px 0 -14px -18px;padding:14px 18px;border:0;background:none;text-align:left;cursor:pointer;
-  font:inherit;letter-spacing:normal;text-transform:none;color:inherit}
-.a3 .bomhead button.bomtog:hover{background:var(--zinc-2);color:inherit;border:0}
-.a3 .bomhead button.bomtog:hover .tog{border-color:var(--pine);color:var(--pine)}
-.a3 .bomtog:focus-visible{outline:2px solid var(--blue);outline-offset:-2px}
-.a3 .bomtog h2,.a3 .bomtog .sub{cursor:pointer}
+/* Where the sheet hands off: a dealer confirms what the sheet only sizes. */
+.a3 .nextstep{margin-top:56px;border:2px solid var(--ink);background:var(--paper);padding:22px 24px;
+  display:flex;align-items:center;justify-content:space-between;gap:20px 32px;flex-wrap:wrap}
+.a3 .nscopy{flex:1 1 320px;min-width:0}
+.a3 .nscopy h2{font-size:clamp(22px,2.6vw,30px);color:var(--ink)}
+.a3 .nscopy p{margin:8px 0 0;font-size:14.5px;color:var(--ink-2);max-width:56ch}
+.a3 .nsact{display:flex;flex-direction:column;align-items:flex-start;gap:8px}
+.a3 .nsbtns{display:flex;flex-wrap:wrap;gap:10px}
+.a3 .nsprimary,.a3 .nssecondary{height:42px;padding:0 20px;border-radius:2px;cursor:pointer;
+  font-family:var(--ff-body);font-size:14px;font-weight:600;white-space:nowrap}
+.a3 .nsprimary{border:1px solid var(--pine);background:var(--pine);color:#fff}
+.a3 .nsprimary:hover{background:var(--pine-2);border-color:var(--pine-2)}
+.a3 .nssecondary{border:1px solid var(--pine);background:var(--paper);color:var(--pine)}
+.a3 .nssecondary:hover{background:var(--mint)}
+.a3 .nsprimary:focus-visible,.a3 .nssecondary:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.a3 .nssoon{margin:0;min-height:1.5em;font-size:12.5px;color:var(--steel)}
 .a3 .tog{border:1px solid var(--line);background:var(--zinc-2);color:var(--ink-2);width:26px;height:26px;border-radius:2px;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;flex-shrink:0}
 .a3 .tog:hover{border-color:var(--pine);color:var(--pine)}
-.a3 .bomtog[aria-expanded="false"] .tog svg{transform:rotate(-90deg)}
-.a3 .bomhead .tog{background:var(--zinc-2);color:var(--ink-2);border-color:var(--line);padding:0}
-.a3 .bomhead button.csv{font-family:'JetBrains Mono';font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;padding:8px 14px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer}
-.a3 .bomhead button.csv:hover{background:var(--pine);border-color:var(--pine)}
-.a3 table.bomt{width:100%;border-collapse:collapse;font-size:13px}
-.a3 table.bomt th{text-align:left;font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--steel);font-weight:400;padding:10px 18px;border-bottom:1px solid var(--line);background:var(--zinc-2)}
-.a3 table.bomt td{padding:8px 18px;border-bottom:1px dotted var(--line);vertical-align:top}
-.a3 table.bomt td.q,.a3 table.bomt td.w,.a3 table.bomt th.q,.a3 table.bomt th.w{text-align:right;font-family:'JetBrains Mono';white-space:nowrap}
-.a3 table.bomt tr.grp td{background:var(--zinc-2);font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-2);padding:7px 18px}
-.a3 table.bomt td .d{font-size:11.5px;color:var(--steel);display:block;margin-top:1px}
-.a3 table.bomt tfoot td{border-top:2px solid var(--ink);border-bottom:0;font-family:'JetBrains Mono';font-weight:600;padding-top:11px}
-.a3 .bomfoot{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line)}
-.a3 .bomfoot div{padding:12px 18px;border-right:1px solid var(--line)}
-.a3 .bomfoot div:last-child{border-right:0}
-.a3 .bomfoot .k{font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--steel)}
-.a3 .bomfoot .v{font-family:'JetBrains Mono';font-size:19px;margin-top:3px}
-.a3 .bomnote{padding:12px 18px;border-top:1px solid var(--line);font-size:11.5px;color:var(--steel);line-height:1.6}
-@media (max-width:760px){
-  .a3 .bomfoot{grid-template-columns:repeat(2,1fr)}
-  .a3 table.bomt th,.a3 table.bomt td{padding-left:12px;padding-right:12px}
-}
 .a3 .opts{margin-top:56px}
 .a3 .opthead{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:12px}
 .a3 .opthead h2{font-size:clamp(28px,3.6vw,44px)}
@@ -330,8 +394,8 @@
 }
 .a3 .emptyflags{font-size:12.5px;color:var(--steel);line-height:1.5}
 /* The segmented controls label with a span — see the note in Planner.tsx. */
-.a3 .f .lbl{font-family:var(--ff-mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;
-  color:var(--steel);white-space:nowrap}
+.a3 .f .lbl{font-family:var(--ff-body);font-weight:500;font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--steel);line-height:1.2;
+  white-space:nowrap}
 /* the app's site-header logo adds a notch pseudo-element; the sheet mark has none */
 .a3 .logo b:after{content:none}
 /* Group 03 carries the family switch the mockup never had, so it takes the
@@ -398,11 +462,6 @@
   font-size:12px;line-height:1.55;color:var(--ink-2)}
 .a3 .assumed b{color:var(--ink);font-weight:600}
 
-/* 03 carries two families' settings; a heading each keeps them apart without
-   a second panel. */
-.a3 .subhead{font-family:var(--ff-mono);font-size:9.5px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--steel);padding:2px 14px 5px;
-  border-top:1px solid var(--line);margin-top:2px}
 /* Advice, not an option: Trace does not offer a tunnel, but a dealer may. */
 .a3 .advice{margin:6px 0 0;padding:8px 12px;background:var(--zinc-2);
   border-left:3px solid var(--line);font-size:12px;line-height:1.5;color:var(--steel)}
@@ -447,31 +506,6 @@
 .a3 .summary .flags>*+*{margin-top:8px}
 .a3 .flags .colnote,.a3 .flags .advice,.a3 .flags .assumed,.a3 .flags .stripcost,
 .a3 .flags .aislewarn{margin-top:0}
-
-/* ── a figure Trace worked out, and the means to disagree ─────────────── */
-
-/* The same height and the same baseline as every other control in the row: the
-   marker sits beside the label, so nothing hangs below the box. It takes the
-   width of its cell, as the inputs do. */
-.a3 .stepfield .steplbl{display:flex;align-items:baseline;justify-content:space-between;gap:6px}
-.a3 .stepfield .steplbl label{min-width:0;flex:0 1 auto}
-.a3 .stepfield .step{display:flex;align-items:stretch;height:26px;
-  border:1px solid var(--line);border-radius:2px;background:var(--paper)}
-.a3 .stepfield .step button{width:24px;flex:0 0 auto;border:0;background:transparent;
-  cursor:pointer;color:var(--ink-2);font-family:var(--ff-body);font-size:15px;line-height:1;
-  padding:0}
-.a3 .stepfield .step button:hover:not(:disabled){background:var(--zinc-2);color:var(--ink)}
-.a3 .stepfield .step button:disabled{color:var(--line);cursor:default}
-.a3 .stepfield .step output{flex:1 1 auto;display:flex;align-items:center;justify-content:center;
-  font-family:var(--ff-field);font-size:12.5px;color:var(--ink);
-  border-left:1px solid var(--line);border-right:1px solid var(--line)}
-/* Whose figure this is, said on the label's line. Both states are the same
-   size, so overriding one does not shuffle the row it is in. */
-.a3 .stepfield .auto,.a3 .stepfield .reauto{flex:0 0 auto;
-  font-family:var(--ff-mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--steel);line-height:1;white-space:nowrap}
-.a3 .stepfield .reauto{border:0;background:transparent;padding:0;cursor:pointer;
-  color:var(--blue);text-decoration:underline;text-underline-offset:2px}
 
 
 /* A paired elevation carries a caption the single one does not, and a caption
@@ -611,6 +645,11 @@
    at the first line. The heading keeps clear of it with a pad instead. */
 .a3 .figtool{position:absolute;top:0;right:0;z-index:3}
 .a3 .figbox:has(.figtool) .fighead{padding-right:22px}
+/* Every line in a figure is drawn in screen pixels, not drawing units, so a plan
+   reads the same weight on the sheet and in the expanded view. The weights
+   themselves are set by role — see STROKE in figText.ts. The heading's legend
+   swatches are left alone: they are small fixed-size icons, not drawing. */
+.a3 .figbox > svg *,.a3 .planfit svg *,.a3 .figoverlayfit svg *{vector-effect:non-scaling-stroke}
 .a3 .figexpandbtn{display:flex;align-items:center;justify-content:center;width:18px;height:18px;
   padding:0;cursor:pointer;border:0;background:none;color:var(--steel);border-radius:2px}
 .a3 .figexpandbtn:hover{color:var(--blue)}
@@ -620,8 +659,10 @@
    this covers the page, it does not replace the figure. */
 .a3 .figoverlay{position:fixed;inset:0;z-index:50;display:flex;align-items:center;
   justify-content:center;padding:28px;background:rgb(26 29 27 / .55)}
-.a3 .figoverlaybox{display:flex;flex-direction:column;width:min(1400px,100%);
-  height:min(900px,100%);background:var(--paper);border:1px solid var(--line);
+/* The whole window, less the dimmed margin: the plan is redrawn for the room it
+   gets, so a cap here would only hold a big screen to a small screen's view. */
+.a3 .figoverlaybox{display:flex;flex-direction:column;width:100%;
+  height:100%;background:var(--paper);border:1px solid var(--line);
   border-radius:2px;overflow:hidden}
 .a3 .figoverlaybar{display:flex;align-items:center;justify-content:space-between;
   padding:9px 12px;border-bottom:1px solid var(--line);
@@ -637,3 +678,24 @@
   background:linear-gradient(var(--zinc-2) 1px,transparent 1px) 0 0/100% 24px,
     linear-gradient(90deg,var(--zinc-2) 1px,transparent 1px) 0 0/24px 100%,var(--paper)}
 .a3 .figoverlayfit svg{display:block;max-width:100%;max-height:100%;width:auto;height:auto;margin:0}
+
+/* The one disclaimer line under the sheet, and the panel it opens. */
+.a3 .disclaim{margin-top:12px;font-size:12.5px;line-height:1.6;color:var(--ink-2);max-width:78ch}
+.a3 .disclaim b{color:var(--ink);font-weight:700}
+.a3 .disclaimlink{padding:0;border:0;background:none;cursor:pointer;font:inherit;font-weight:600;
+  color:var(--blue);white-space:nowrap}
+.a3 .disclaimlink:hover{text-decoration:underline}
+.a3 .disclaimlink:focus-visible{outline:1px solid var(--blue);outline-offset:2px}
+.a3 .limitsbox{display:flex;flex-direction:column;width:min(640px,100%);max-height:100%;
+  background:var(--paper);border:1px solid var(--line);border-radius:2px;overflow:hidden}
+.a3 .limitsbody{overflow-y:auto;padding:22px 26px 26px;font-size:14px;line-height:1.6;color:var(--ink-2)}
+.a3 .limitsbody h2{font-size:26px;color:var(--ink);margin:0 0 10px}
+.a3 .limitsbody .lede{color:var(--ink);margin:0}
+.a3 .limitsbody h4{font-family:'JetBrains Mono';font-size:10px;font-weight:400;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--steel);margin:20px 0 6px}
+.a3 .limitsbody ul{margin:0;padding-left:18px}
+.a3 .limitsbody li{margin:2px 0}
+.a3 .limitsbody p{margin:0}
+.a3 .limitscta{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px !important}
+.a3 .limitscta span{font-family:'JetBrains Mono';font-size:10.5px;letter-spacing:.1em;
+  text-transform:uppercase;padding:7px 12px;border:1px solid var(--line);color:var(--ink-2)}

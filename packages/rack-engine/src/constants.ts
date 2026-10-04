@@ -131,8 +131,15 @@ export const CANTILEVER_AISLE_MIN_FT = 14;
  * mistyped dimension allocating a grid of columns big enough to take the tab
  * down with it: 10,000 ft on a side is about 2,300 acres, some forty times
  * the largest warehouse ever built, so nothing real is being refused.
+ *
+ * The floor is a positivity floor and nothing more. It was forty feet, and a
+ * customer who typed five watched the box rewrite itself to forty — a silent
+ * clamp on a number they had just measured, and the one kind of answer a
+ * schedule must never give. A small building is a real building; it draws
+ * small. What is refused is only a dimension that is not a length at all,
+ * because the layout divides by it.
  */
-export const BUILDING_FT = { min: 40, max: 10_000 } as const;
+export const BUILDING_FT = { min: 1, max: 10_000 } as const;
 
 /**
  * The floor above which a designer stops sizing one layout, ft on a side.
@@ -163,11 +170,12 @@ export const AVAILABLE_THREE_QUARTERS = 0.75;
 /**
  * The longest continuous rack row before it has to be broken, ft.
  *
- * Read as segments rather than as a limit: a row is cut into as many pieces of
- * this length as it takes, so a 240 ft row becomes three 80 ft segments with
- * two cross aisles, not one aisle somewhere in the middle.
+ * Read as segments rather than as a limit: a row is cut into as many equal
+ * pieces as it takes to keep each one under this, so a 240 ft row gets one
+ * cross aisle in the middle and a 300 ft row gets two, not one aisle at 120 ft
+ * and a short leftover.
  */
-export const CROSS_AISLE_SEGMENT_FT = 100;
+export const CROSS_AISLE_SEGMENT_FT = 120;
 export const CROSS_AISLE_WIDTH_FT = 10;
 
 /** Cross aisles a run of this length needs. */
@@ -201,6 +209,20 @@ export function armLengthForProduct(productLengthFt: number): number {
  * columns exactly on the band edge and calls them absorbed.
  */
 export const BUILDING_COLUMN_IN = 12;
+
+/**
+ * The upright's own section along the run, in.
+ *
+ * What a bay line is actually made of. A frame is two uprights the frame depth
+ * apart, braced together: `frameDepthIn` is how far it reaches front to back,
+ * and this is how much of the run it occupies — a few inches of steel, not a
+ * couple of feet.
+ *
+ * It matters because a building column standing at a bay line is only taken
+ * round by the upright if it fits inside it, and a 12 in column does not fit
+ * inside a 3 in section. See `bayAt`.
+ */
+export const UPRIGHT_SECTION_IN = 3;
 
 /**
  * How badly a column lands, and what that costs the search.

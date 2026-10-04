@@ -29,8 +29,6 @@ export interface Detail {
   bays: boolean;
   /** A label against each row, and each aisle dimensioned where it falls. */
   perRowLabels: boolean;
-  /** Columns drawn one by one, rather than as guide lines. */
-  columnsIndividually: boolean;
   /** Shapes full detail would have emitted, which is what the ceiling caps. */
   estimatedElements: number;
   /** True where anything at all was left out. */
@@ -39,8 +37,6 @@ export interface Detail {
 
 /** Below this many pixels a bay is not worth ticking. */
 const BAY_FULL_PX = 6;
-/** Columns closer together than this on screen are drawn as a grid, not marks. */
-const COLUMN_PX = 4;
 
 /**
  * Past this many shapes, a label beside every row stops being worth drawing.
@@ -92,7 +88,6 @@ export function detailFor(a: {
   bands: number;
   bays: number;
   deep: number;
-  columnSpacingFt?: number;
 }): Detail {
   const pxPerFt = a.renderedWidthPx / Math.max(1, a.buildingLengthFt);
   const pxPerBay = pxPerFt * Math.max(0.1, a.bayLengthFt);
@@ -114,7 +109,6 @@ export function detailFor(a: {
    */
   const level: DetailLevel =
     pxPerBay >= BAY_FULL_PX && elements <= ELEMENT_CEILING ? 'full' : 'banded';
-  const columnsIndividually = pxPerFt * (a.columnSpacingFt ?? 40) >= COLUMN_PX;
   return {
     // `bays` has nowhere left to be false — see `ELEMENT_CEILING` above — but
     // the field stays, because `PlanFigure` still branches on it and a type
@@ -123,13 +117,11 @@ export function detailFor(a: {
     level, pxPerFt, pxPerBay,
     bays: true,
     perRowLabels: level === 'full',
-    columnsIndividually,
     estimatedElements: elements,
-    // Row labels dropping is as much a simplification as the column grid
     // collapsing — it used to go unmentioned because nothing checked `level`
     // here, so a large building's plan went quiet about every row caption it
     // had silently dropped.
-    simplified: !columnsIndividually || level === 'banded',
+    simplified: level === 'banded',
   };
 }
 
@@ -140,7 +132,7 @@ export function detailFor(a: {
  * what they are looking at.
  */
 export function simplifiedNote(d: Detail, a: {
-  rows: number; bays: number; columns: number;
+  rows: number; bays: number;
   /** What a module along a band is called here: a bay, or a drive-in lane. */
   unit?: 'bay' | 'lane';
 }): string | null {
@@ -148,35 +140,12 @@ export function simplifiedNote(d: Detail, a: {
   // The rows are drawn as bays at every size now, so there is no longer a band
   // to own up to. Two things can still stand down: the label beside each row,
   // once there are too many rows for one to be legible against the next, and
-  // the column grid, once the marks would land on top of one another.
   const parts: string[] = [];
   if (!d.perRowLabels) {
     parts.push(`${a.rows.toLocaleString()} row labels dropped past `
       + `${d.estimatedElements.toLocaleString()} shapes`);
   }
-  if (!d.columnsIndividually && a.columns > 0) {
-    parts.push(`${a.columns.toLocaleString()} columns drawn as a grid`);
-  }
   return `Simplified for scale — ${parts.join(', ')}. `
     + 'Every figure on this sheet is counted from the layout, not from the drawing.';
 }
 
-/**
- * The closest two columns come to each other, in feet.
- *
- * Whether columns can be told apart on the page is decided by the tightest
- * spacing in the grid, not by an assumed bay.
- */
-export function columnSpacingFt(
-  columns: readonly { xFt: number; yFt: number }[],
-): number | undefined {
-  if (columns.length < 2) return undefined;
-  const gap = (vs: number[]) => {
-    const u = [...new Set(vs)].sort((a, b) => a - b);
-    let min = Infinity;
-    for (let i = 1; i < u.length; i++) min = Math.min(min, u[i]! - u[i - 1]!);
-    return min;
-  };
-  const g = Math.min(gap(columns.map((c) => c.xFt)), gap(columns.map((c) => c.yFt)));
-  return Number.isFinite(g) ? g : undefined;
-}

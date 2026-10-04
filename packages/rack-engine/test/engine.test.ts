@@ -175,3 +175,27 @@ test('bom weight is the sum of its lines', () => {
   assert.equal(bom.totalWeightLb, bom.lines.reduce((s, l) => s + l.totalWeightLb, 0));
   assert.ok(bom.truckloads >= 1);
 });
+
+test('a frame carrying more than fifteen tons calls for a heavier upright', () => {
+  // Three heavy pallets on each of several levels: the beam pair is rated for
+  // the load, and the frame carries that rating once per level.
+  const heavy = clone(base);
+  heavy.config.beam = { mode: 'fixed', lengthIn: 144 };
+  heavy.pallet.weightLb = 2600;
+  const { spec, flags } = solve(heavy);
+  assert.equal(spec.frameCapacityLb, spec.beamCapacityLb * spec.levels,
+    'the frame carries its beam pair once per level');
+  assert.ok(spec.frameCapacityLb > 30_000, `this frame carries ${spec.frameCapacityLb} lb`);
+  const flag = flags.find((f) => f.title === 'Heavy upright required');
+  assert.ok(flag, 'the frame is flagged before the slab under it is');
+  // Rule: name the number, the consequence and the action.
+  assert.match(flag.detail, /lb/, 'it names the load');
+  assert.match(flag.detail, /heavier column section/, 'it names the consequence');
+  assert.match(flag.detail, /seismic/, 'it names what to confirm');
+});
+
+test('an ordinary frame is not told it needs a heavy upright', () => {
+  const { spec, flags } = solve(base);
+  assert.ok(spec.frameCapacityLb <= 30_000, `a standard frame carries ${spec.frameCapacityLb} lb`);
+  assert.ok(!flags.some((f) => f.title === 'Heavy upright required'));
+});

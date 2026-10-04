@@ -1,10 +1,11 @@
 import {
   AVAILABLE_THREE_QUARTERS, BUILDING_COLUMN_IN, COLUMN_FACE_ZONE_FT, COLUMN_PENALTY,
-  COLUMN_WIDTH_IN, CROSS_AISLE_WIDTH_FT, crossAislesFor,
+  UPRIGHT_SECTION_IN,
+  COLUMN_WIDTH_IN, CROSS_AISLE_WIDTH_FT,
   BUILDING_ZONE_ADVICE_FT, CROSS_AISLE_SEGMENT_FT, LANE_CLEARANCE_IN, DOCK_APRON_FT, FLUE_IN, GRID_SEARCH_STEP_FT,
   type ColumnWhere,
 } from './constants.js';
-import { crossAisleSpans, fillSegments } from './crossaisles.js';
+import { crossAislePlan, crossAisleSpansAt, fillSegments } from './crossaisles.js';
 import { rackType, type RackKind, type RackType } from './racktypes.js';
 import type { Flag } from './types.js';
 
@@ -85,6 +86,11 @@ export interface RackLayoutInput {
   gridYFt?: number;
   /** Overrides the cross aisles Trace works out from the run length. */
   crossAisles?: number;
+  /**
+   * Cross aisles another zone on the same floor already placed, in envelope
+   * feet. Wins over `crossAisles`: the positions are the building's.
+   */
+  crossAisleAtFt?: readonly number[];
   /**
    * Overrides the open end the solver picks for every lane block. A dealer who
    * knows the floor may want the lanes worked from the other side; nothing here
@@ -226,22 +232,15 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
     input.wallClearanceFt * 2;
 
   // 1 ── the envelope, before anything is laid in it
-  const usableAlongFt = availableAlongFt(alongFullFt, acrossFt, input.available);
+  const usableAlongFt = rackUsableAlongFt(input);
   const unavailableAlongFt = Math.max(0, alongFullFt - usableAlongFt);
 
-  // 3 ── circulation comes off the run before bays are counted
-  const crossAisles = Math.max(0, Math.round(input.crossAisles ?? crossAislesFor(usableAlongFt)));
-  // A cross aisle is a gap: the racking stops at its edge and starts again on
-  // the far side, so the run loses its width outright.
-  const alongForBaysFt = Math.max(0, usableAlongFt - crossAisles * CROSS_AISLE_WIDTH_FT);
 
   // A drive-in lane is one pallet wide plus the room the truck needs either
   // side of it, because the truck drives inside the rack and the pallet rests
   // on rails rather than on a beam. Beam length does not come into it.
   const lanes = R.onePalletLanes === true;
-  const bayLengthFt = lanes
-    ? laneWidthFt(input.palletWidthIn ?? 40)
-    : (input.beamLengthIn + COLUMN_WIDTH_IN) / 12;
+  const bayLengthFt = bayLengthFor(kind, input.beamLengthIn, input.palletWidthIn);
   const fd = input.frameDepthIn / 12;
   const flue = FLUE_IN / 12;
   const aisle = input.aisleWidthFt;
@@ -316,6 +315,12 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
     if (bestAl !== 0 || bestAc !== 0) best = trial(bestAl, bestAc);
   }
 
+  // 3 ── circulation came off the run before the bays were counted, on the
+  // bays' own boundaries. A cross aisle is a gap: the racking stops at its edge
+  // and starts again on the far side, so the run loses its width outright.
+  const crossAisles = best.crossAisleAtFt.length;
+  const alongForBaysFt = Math.max(0, usableAlongFt - crossAisles * CROSS_AISLE_WIDTH_FT);
+
   // A lane holds one pallet across; a bay holds what the beam carries, and an
   // aisle-picked type holds that at every pallet of depth.
   const perBay = lanes ? 1 : input.palletsPerBay * (R.pick === 'aisle' ? deep : 1);
@@ -373,7 +378,8 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
    */
   function score(alongOffsetFt: number, acrossOffsetFt: number): number {
     const { rows, bands, flues, aisles } = stack(acrossFt - acrossOffsetFt, acrossOffsetFt, deep);
-    const { bayStartsFt, bays } = runSpans(usableAlongFt, bayLengthFt, crossAisles, alongOffsetFt);
+    const { bayStartsFt, bays } = runSpans(usableAlongFt, bayLengthFt, input.crossAisles,
+      alongOffsetFt, input.crossAisleAtFt);
     const g: ColumnGround = {
       bands, flues, aisles, moduleStartsFt: bayStartsFt, moduleLengthFt: bayLengthFt,
       orientation: input.orientation, wallClearanceFt: input.wallClearanceFt,
@@ -399,7 +405,7 @@ export function layoutRack(kind: RackKind, input: RackLayoutInput): RackLayout {
     // Bays are counted from what the segments actually hold: nothing straddles
     // a cross aisle, so a segment's remainder is spare floor rather than a bay.
     const { bayStartsFt, crossAisleAtFt, bays } =
-      runSpans(usableAlongFt, bayLengthFt, crossAisles, alongOffsetFt);
+      runSpans(usableAlongFt, bayLengthFt, input.crossAisles, alongOffsetFt, input.crossAisleAtFt);
     const columns = columnsRaw.map((c) => classifyColumn(c, {
       bands, flues, aisles, moduleStartsFt: bayStartsFt, moduleLengthFt: bayLengthFt,
       orientation: input.orientation, wallClearanceFt: input.wallClearanceFt,
@@ -530,6 +536,11 @@ export interface ColumnGround {
   moduleStartsFt: readonly number[];
   /** One module's length along the run. */
   moduleLengthFt: number;
+  /**
+   * The upright's section along the run, in. What a column at a bay line has to
+   * fit inside to be taken round by it. Defaults to `UPRIGHT_SECTION_IN`.
+   */
+  uprightIn?: number;
   orientation: Orientation;
   wallClearanceFt: number;
   /** True where the run reserves no dock apron — a strip rather than a floor. */
@@ -600,7 +611,8 @@ export function alongInfo(along: number, g: ColumnGround): AlongInfo {
   return {
     inRacking: g.moduleStartsFt.some(
       (s) => along > s - half && along < s + g.moduleLengthFt + half),
-    bay: bayAt(along, g.moduleStartsFt, g.moduleLengthFt),
+    bay: bayAt(along, g.moduleStartsFt, g.moduleLengthFt,
+      g.uprightIn ?? UPRIGHT_SECTION_IN),
   };
 }
 
@@ -759,27 +771,72 @@ export function laneWidthFt(palletWidthIn: number): number {
   return (Math.max(24, palletWidthIn) + LANE_CLEARANCE_IN) / 12;
 }
 
+/** The run length left once the building has taken its share, ft. */
+export function rackUsableAlongFt(input: RackLayoutInput): number {
+  const alongIsLength = input.orientation === 'length';
+  const alongFullFt = (alongIsLength ? input.buildingLengthFt : input.buildingWidthFt)
+    - input.wallClearanceFt * 2 - DOCK_APRON_FT;
+  const acrossFt = (alongIsLength ? input.buildingWidthFt : input.buildingLengthFt)
+    - input.wallClearanceFt * 2;
+  return availableAlongFt(alongFullFt, acrossFt, input.available);
+}
+
+/**
+ * The module a row of this type repeats along its length, ft: a bay of beam
+ * plus its upright, or a lane where the pallet rides on rails instead.
+ */
+export function bayLengthFor(kind: RackKind, beamLengthIn: number, palletWidthIn?: number): number {
+  return rackType(kind).onePalletLanes === true
+    ? laneWidthFt(palletWidthIn ?? 40)
+    : (beamLengthIn + COLUMN_WIDTH_IN) / 12;
+}
+
 export function runSpans(
-  usableAlongFt: number, bayLengthFt: number, crossAisles: number, offsetFt: number,
+  usableAlongFt: number, bayLengthFt: number, crossAisles: number | undefined, offsetFt: number,
+  atFt?: readonly number[],
 ): { bayStartsFt: number[]; crossAisleAtFt: number[]; bays: number } {
-  // The aisles come from the building, not from this zone's bay count — that
-  // is what puts them at the same feet as the cantilever strip's. Grouping bays
-  // instead put each zone's aisles wherever its own module happened to land.
-  const spans = crossAisleSpans(usableAlongFt, crossAisles);
-  const bayStartsFt = fillSegments(spans, bayLengthFt, bayLengthFt, offsetFt);
+  // On this zone's own bay boundaries, unless another zone on the same floor
+  // already placed them — then they are taken as given, so a mixed floor's
+  // aisles are one route across the building rather than two staggered ones.
+  const spans = atFt
+    ? crossAisleSpansAt(usableAlongFt, atFt)
+    : crossAislePlan({ usableAlongFt, moduleFt: bayLengthFt, offsetFt, crossAisles });
+  const bayStartsFt = fillSegments(spans, bayLengthFt, bayLengthFt, atFt ? offsetFt : 0);
   return { bayStartsFt, crossAisleAtFt: [...spans.atFt], bays: bayStartsFt.length };
 }
 
 /**
- * Which bay a point along the run falls in, or -1 where it falls on a bay line
- * or in a cross aisle. Bay lines carry the upright frames, so a column there is
- * built around rather than lost.
+ * Which bay a point along the run falls in, or -1 where the upright takes it.
+ *
+ * A bay line carries an upright, and a column standing where the upright stands
+ * is built around rather than lost. But only if it fits: the question is
+ * whether the column's own footprint is inside the upright's, not whether its
+ * centre is somewhere near the line.
+ *
+ * It used to ask the second question, with half a building column as the
+ * tolerance — so anything within six inches of a line was waved through. On a
+ * grid whose pitch nearly divides by the bay that is most of the building: at a
+ * 25 ft grid on an 8.25 ft bay every column lands within a few inches of a
+ * line, and a floor full of obstructions came back without a mark on it. Worse,
+ * the two halves of a cross-aisle layout have different bay phase, so one read
+ * clear and the other did not — the same column, judged two ways.
+ *
+ * This is the rule the aisle branch of `verdictFrom` already learned: being
+ * near a line never excuses a column that is really in the way. A 12 in column
+ * does not fit inside a 3 in upright, so it is in the bay — and a deeper
+ * section legitimately covers more, which is why the upright is measured rather
+ * than assumed.
  */
-function bayAt(along: number, starts: readonly number[], bayLengthFt: number): number {
-  const tol = BUILDING_COLUMN_IN / 24;            // it has to clear the bay line, not touch it
+function bayAt(
+  along: number, starts: readonly number[], bayLengthFt: number, uprightIn: number,
+): number {
+  const colHalf = BUILDING_COLUMN_IN / 24;
+  const upHalf = Math.max(0, uprightIn) / 24;
   for (let i = 0; i < starts.length; i++) {
     const start = starts[i]!;
-    if (along > start + tol && along < start + bayLengthFt - tol) return i;
+    // Any overlap with the opening between the two uprights is an obstruction.
+    if (along + colHalf > start + upHalf
+      && along - colHalf < start + bayLengthFt - upHalf) return i;
   }
   return -1;
 }
@@ -873,10 +930,11 @@ export function envelopeChecks(
       title: `${layout.crossAisles} cross ${layout.crossAisles === 1 ? 'aisle' : 'aisles'} assumed`,
       detail: `A ${layout.usableAlongFt.toFixed(0)} ft row is cut into `
         + `${layout.crossAisles + 1} segments of about `
-        + `${(layout.usableAlongFt / (layout.crossAisles + 1)).toFixed(0)} ft by `
+        + `${((layout.bays / (layout.crossAisles + 1)) * layout.bayLengthFt).toFixed(0)} ft by `
         + `${layout.crossAisles} cross ${layout.crossAisles === 1 ? 'aisle' : 'aisles'} of `
         + `${layout.crossAisleWidthFt} ft, costing ${layout.baysLostToCrossAisles} bays per row. `
-        + `Trace cuts a row every ${CROSS_AISLE_SEGMENT_FT} ft, which is an assumption: fire code `
+        + `Trace keeps every continuous run under ${CROSS_AISLE_SEGMENT_FT} ft and puts each aisle `
+        + `at the end of a bay, which is an assumption: fire code `
         + `requirements vary by jurisdiction, commodity and storage height — confirm with the AHJ.`,
     });
   }

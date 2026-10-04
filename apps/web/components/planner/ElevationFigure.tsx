@@ -4,6 +4,7 @@ import { memo, useState } from 'react';
 import { FigBoxEl } from './figBox';
 import {
   EL_FRAME, FIG_PAD, FIG_TEXT, elevationFrameY, elevationPpi, elBox, fitFigure, type Extent, type FigBox,
+  STROKE,
 } from './figText';
 import {
   LANE_CLEARANCE_IN, laneFrameHeightIn, type RackSpec,
@@ -167,12 +168,12 @@ function ElevationFigure({
   ext.add(CX - spanPx / 2 - colPx, topY, spanPx + colPx * 2, FL - topY);
   ext.add(CX, FL, 0, 11);                                  // the floor and its hatching
   shell.push(<line key={key++} x1={CX - BLEED} y1={FL} x2={CX + BLEED} y2={FL}
-    stroke={INK} strokeWidth={3} />);
+    stroke={INK} strokeWidth={STROKE.wall} />);
   for (let h = CX - BLEED; h < CX + BLEED; h += 26) {
     shell.push(<line key={key++} x1={h} y1={FL} x2={h - 11} y2={FL + 11} stroke={LINE} strokeWidth={1} />);
   }
   shell.push(<line key={key++} x1={CX - BLEED} y1={spY} x2={CX + BLEED} y2={spY}
-    stroke={INK} strokeWidth={1.5} strokeDasharray="9 5" />);
+    stroke={INK} strokeWidth={STROKE.dash} strokeDasharray="9 5" />);
   if (labelClearHeight) {
     ext.text({
       x: CL, y: spY - 7, size: fAnno,
@@ -248,13 +249,13 @@ function ElevationFigure({
     for (let k = 0; k <= panels; k++) {
       const y = yBottom - k * step;
       frames.push(<line key={key++} x1={x0} y1={y} x2={x1} y2={y}
-        stroke={PINE} strokeWidth={1.2} opacity={0.85} />);
+        stroke={PINE} strokeWidth={STROKE.beam} opacity={0.85} />);
     }
     for (let k = 0; k < panels; k++) {
       const y0 = yBottom - k * step, y1 = y0 - step;
       const left = k % 2 === 0;
       frames.push(<line key={key++} x1={left ? x0 : x1} y1={y0} x2={left ? x1 : x0} y2={y1}
-        stroke={PINE} strokeWidth={1.2} opacity={0.7} />);
+        stroke={PINE} strokeWidth={STROKE.beam} opacity={0.7} />);
     }
   };
 
@@ -288,7 +289,7 @@ function ElevationFigure({
           : `M${cxm + colPx * 0.4} ${y.toFixed(1)}L${cxm - colPx * 0.4} ${(y + 26).toFixed(1)}`;
         d = !d;
       }
-      frames.push(<path key={key++} d={zz} stroke={PINE} strokeWidth={1.4} fill="none"
+      frames.push(<path key={key++} d={zz} stroke={PINE} strokeWidth={STROKE.beam} fill="none"
         opacity={0.65} />);
     }
     frames.push(<rect key={key++} x={fx - 6} y={FL - 5} width={colPx + 12} height={5} fill={INK} />);
@@ -360,9 +361,9 @@ function ElevationFigure({
   }
 
   const dx = X0 - colPx - 26;
-  dims.push(<line key={key++} x1={dx} y1={topY} x2={dx} y2={FL} stroke={BLUE} strokeWidth={1} />);
-  dims.push(<line key={key++} x1={dx - 5} y1={topY} x2={dx + 5} y2={topY} stroke={BLUE} />);
-  dims.push(<line key={key++} x1={dx - 5} y1={FL} x2={dx + 5} y2={FL} stroke={BLUE} />);
+  dims.push(<line key={key++} x1={dx} y1={topY} x2={dx} y2={FL} stroke={BLUE} strokeWidth={STROKE.dim} />);
+  dims.push(<line key={key++} x1={dx - 5} y1={topY} x2={dx + 5} y2={topY} stroke={BLUE} strokeWidth={STROKE.dim} />);
+  dims.push(<line key={key++} x1={dx - 5} y1={FL} x2={dx + 5} y2={FL} stroke={BLUE} strokeWidth={STROKE.dim} />);
   ext.text({
     x: dx - 9, y: (topY + FL) / 2, size: fDim, anchor: 'middle', rotate: -90,
     text: `FRAME ${(frameIn / 12).toFixed(0)}'-0"`,
@@ -396,11 +397,11 @@ function ElevationFigure({
     // to the levels from the drawing's edge, and the labels sit on top.
     for (const y of [yLow, yHigh]) {
       shell.push(<line key={key++} x1={X1 + colPx + 2} y1={y} x2={px + 5} y2={y}
-        stroke={LINE} strokeWidth={0.8} />);
+        stroke={LINE} strokeWidth={STROKE.dim} />);
     }
-    dims.push(<line key={key++} x1={px} y1={yHigh} x2={px} y2={yLow} stroke={BLUE} strokeWidth={1} />);
-    dims.push(<line key={key++} x1={px - 5} y1={yHigh} x2={px + 5} y2={yHigh} stroke={BLUE} />);
-    dims.push(<line key={key++} x1={px - 5} y1={yLow} x2={px + 5} y2={yLow} stroke={BLUE} />);
+    dims.push(<line key={key++} x1={px} y1={yHigh} x2={px} y2={yLow} stroke={BLUE} strokeWidth={STROKE.dim} />);
+    dims.push(<line key={key++} x1={px - 5} y1={yHigh} x2={px + 5} y2={yHigh} stroke={BLUE} strokeWidth={STROKE.dim} />);
+    dims.push(<line key={key++} x1={px - 5} y1={yLow} x2={px + 5} y2={yLow} stroke={BLUE} strokeWidth={STROKE.dim} />);
     const pitchText = `${spec.levelPitchIn}"`;
     // Clear of its own dimension line. The frame's figure sits nine units off
     // to the left of its line, where the glyphs then grow away from it; the
@@ -438,9 +439,9 @@ function ElevationFigure({
   // label at FL+44 that only one of the two views draws, and in the other it
   // was an empty inch between the drawing and the line under it.
   ext.add(X0, FL + 20);
-  dims.push(<line key={key++} x1={X0} y1={FL + 15} x2={X1} y2={FL + 15} stroke={BLUE} />);
-  dims.push(<line key={key++} x1={X0} y1={FL + 10} x2={X0} y2={FL + 20} stroke={BLUE} />);
-  dims.push(<line key={key++} x1={X1} y1={FL + 10} x2={X1} y2={FL + 20} stroke={BLUE} />);
+  dims.push(<line key={key++} x1={X0} y1={FL + 15} x2={X1} y2={FL + 15} stroke={BLUE} strokeWidth={STROKE.dim} />);
+  dims.push(<line key={key++} x1={X0} y1={FL + 10} x2={X0} y2={FL + 20} stroke={BLUE} strokeWidth={STROKE.dim} />);
+  dims.push(<line key={key++} x1={X1} y1={FL + 10} x2={X1} y2={FL + 20} stroke={BLUE} strokeWidth={STROKE.dim} />);
   if (v === 'depth') {
     const acrossText = `${lane ? `${deep} × ` : ''}${palletDepthIn}" PALLET`;
     ext.text({ x: CX, y: FL + 29, size: fDim, text: acrossText, anchor: 'middle' });
@@ -452,7 +453,7 @@ function ElevationFigure({
   dims.push(<rect key={key++} x={CX - BLEED} y={spY} width={BLEED * 2} height={clY - spY}
     fill={breach ? RED : YELLOW} opacity={breach ? 0.26 : 0.22} />);
   dims.push(<line key={key++} x1={CX - BLEED} y1={clY} x2={CX + BLEED} y2={clY}
-    stroke={breach ? RED : GOLD} strokeWidth={1} strokeDasharray="5 3" />);
+    stroke={breach ? RED : GOLD} strokeWidth={STROKE.dash} strokeDasharray="5 3" />);
   const clearText = breach ? 'FRAME BREAKS CLEARANCE' : `CLEARANCE ${spec.topClearanceIn}"`;
   ext.text({ x: CL, y: (spY + clY) / 2 + 3, size: fAnno, text: clearText });
   dims.push(<text key={key++} x={CL} y={(spY + clY) / 2 + 3}
@@ -474,7 +475,7 @@ function ElevationFigure({
   };
 
   const fit = fitFigure(
-    box ?? elBox(2, 1),
+    box ?? elBox(),
     (fAnno, ext) => render(view, fAnno, ext),
     {
       lockY: (font) => elevationFrameY(spY, font),

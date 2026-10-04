@@ -2,11 +2,12 @@ import {
   CANTILEVER_AISLE_MIN_FT, MIXED_CANT_ROWS, TRUCK_PAYLOAD_LB,
 } from './constants.js';
 import {
-  cantileverChecks, cantileverRowDepthsFt, layoutCantileverRuns,
+  cantileverChecks, cantileverRowDepthsFt, layoutCantileverRuns, usableAlongFor,
   type CantileverRunInput, type CantileverRunLayout,
 } from './cantileverruns.js';
+import { crossAislePlan } from './crossaisles.js';
 import {
-  classifyColumn, gridColumns, layoutRack,
+  bayLengthFor, classifyColumn, gridColumns, layoutRack, rackUsableAlongFt,
   type Availability, type Orientation, type RackColumn, type RackLayout, type RackLayoutInput,
 } from './racklayout.js';
 import { rackType, type RackKind } from './racktypes.js';
@@ -67,6 +68,8 @@ export interface MixedCantileverInput {
 export interface MixedPalletInput {
   kind: RackKind;
   beamLengthIn: number;
+  /** Sets the lane width where the type has lanes rather than bays. */
+  palletWidthIn?: number;
   palletsPerBay: number;
   /** Pallet levels including the floor level. */
   levels: number;
@@ -183,8 +186,8 @@ export function maxStripRows(input: MixedInput): number {
   return Math.max(MIXED_CANT_ROWS.min, rows);
 }
 
-/** What the cantilever solver is asked, so checks can be run against it too. */
-export function mixedStripInput(input: MixedInput): CantileverRunInput {
+/** The strip's input before the building's cross aisles are placed in it. */
+function stripBase(input: MixedInput): CantileverRunInput {
   const { cantileverAisleFt } = mixedAisles(input.pallet.aisleWidthFt);
   return {
     buildingLengthFt: input.buildingLengthFt,
@@ -212,8 +215,93 @@ export function mixedStripInput(input: MixedInput): CantileverRunInput {
   };
 }
 
+/**
+ * Where the cross aisles cross this floor, placed once for both zones.
+ *
+ * On the pallet zone's bay boundaries: it is the finer module, so the aisles
+ * can sit at a bay end there and the strip, whose runs are coarser, fits what
+ * it can into the same segments. Placing them per zone put the strip's gaps at
+ * different feet from the racking's — two staggered dead ends, not a route.
+ *
+ * Planned along the longer of the two zones. Where the usable floor is given
+ * as an area, the pallet zone is narrower than the building and so runs
+ * further along it than the strip does; planned from the strip, its far end
+ * was a segment nobody had held to 120 ft. The shorter zone takes the same
+ * positions and an aisle past its end does not reach it.
+ *
+ * The pallet zone's length follows the strip's depth, and the strip's depth
+ * follows where the aisles fall — so the length is walked up until it stops
+ * growing. It only grows, and the building caps it, so it settles in a step
+ * or two.
+ */
+/** Passes the mixed cross-aisle plan may take to settle before it is a bug. */
+export const MIXED_AISLE_PASSES = 10;
+
+export interface MixedAislePlan {
+  atFt: readonly number[];
+  /** The length the aisles were planned along — the longer zone's. */
+  alongFt: number;
+  /** How many passes it took to stop growing. */
+  passes: number;
+}
+
+const planned = new WeakMap<MixedInput, MixedAislePlan>();
+
+export function mixedAislePlan(input: MixedInput): MixedAislePlan {
+  const hit = planned.get(input);
+  if (hit) return hit;
+
+  const moduleFt =
+    bayLengthFor(input.pallet.kind, input.pallet.beamLengthIn, input.pallet.palletWidthIn);
+  const plan = (usableAlongFt: number) =>
+    crossAislePlan({ usableAlongFt, moduleFt, crossAisles: input.crossAisles }).atFt;
+  const { sharedAisleFt } = mixedAisles(input.pallet.aisleWidthFt);
+
+  let alongFt = usableAlongFor(stripBase(input));
+  let atFt = plan(alongFt);
+  let passes = 1;
+  for (;; passes++) {
+    const strip = layoutCantileverRuns({ ...stripBase(input), crossAisleAtFt: atFt });
+    const palletAlongFt =
+      rackUsableAlongFt(palletBase(input, strip.usedFt + sharedAisleFt, 1));
+    if (palletAlongFt <= alongFt + 1e-9) break;
+    // It only grows and the building caps it, so a floor still moving after
+    // this many passes is a bug, not a slow floor — say so rather than hand
+    // back aisles nobody has held to 120 ft.
+    if (passes >= MIXED_AISLE_PASSES) {
+      throw new Error(
+        `Mixed cross aisles did not settle in ${MIXED_AISLE_PASSES} passes: the pallet zone `
+        + `was still growing (${alongFt.toFixed(1)} ft → ${palletAlongFt.toFixed(1)} ft).`);
+    }
+    alongFt = palletAlongFt;
+    atFt = plan(alongFt);
+  }
+  const result = { atFt, alongFt, passes };
+  planned.set(input, result);
+  return result;
+}
+
+export function mixedCrossAisleAtFt(input: MixedInput): readonly number[] {
+  return mixedAislePlan(input).atFt;
+}
+
+/** What the cantilever solver is asked, so checks can be run against it too. */
+export function mixedStripInput(input: MixedInput): CantileverRunInput {
+  return { ...stripBase(input), crossAisleAtFt: mixedCrossAisleAtFt(input) };
+}
+
 /** The pallet solver's input, either against the whole building or what is left. */
 function palletInputFor(
+  input: MixedInput, acrossReductionFt: number, wallsAcross: 1 | 2,
+): RackLayoutInput {
+  return {
+    ...palletBase(input, acrossReductionFt, wallsAcross),
+    crossAisleAtFt: mixedCrossAisleAtFt(input),
+  };
+}
+
+/** The same, before the building's cross aisles are placed in it. */
+function palletBase(
   input: MixedInput, acrossReductionFt: number, wallsAcross: 1 | 2,
 ): RackLayoutInput {
   const alongIsLength = input.orientation === 'length';

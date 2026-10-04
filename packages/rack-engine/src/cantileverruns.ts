@@ -1,12 +1,12 @@
 import {
-  CROSS_AISLE_WIDTH_FT, crossAislesFor,
+  CROSS_AISLE_WIDTH_FT,
   CANTILEVER_ARM_PITCH_IN, CANTILEVER_BASE_HEIGHT_IN,
   CANTILEVER_BRACE_PITCH_FT, CANTILEVER_COLUMN_IN,
   CANTILEVER_TOP_CLEARANCE_IN, CANTILEVER_TOP_MATERIAL_IN,
   CANTILEVER_MAX_CENTRES_FT, CANTILEVER_MAX_OVERHANG_FT, CANTILEVER_PRODUCT_FT,
   CANTILEVER_RUN_GAP_FT, DOCK_APRON_FT, LONG_HEAD_CLEARANCE_IN, TRUCK_PAYLOAD_LB,
 } from './constants.js';
-import { crossAisleSpans, fillSegments } from './crossaisles.js';
+import { crossAislePlan, crossAisleSpansAt, fillSegments } from './crossaisles.js';
 import {
   classifyColumn, gridColumns,
   type Availability, type Orientation, type RackColumn,
@@ -92,6 +92,11 @@ export interface CantileverRunInput {
   available?: Availability;
   /** Overrides the cross aisles worked out from the run. */
   crossAisles?: number;
+  /**
+   * Cross aisles another zone on the same floor already placed, in envelope
+   * feet. Wins over `crossAisles`: the positions are the building's.
+   */
+  crossAisleAtFt?: readonly number[];
   /** The building's column grid, ft. Drawn, but see `columnsSolved`. */
   gridXFt?: number;
   gridYFt?: number;
@@ -289,18 +294,19 @@ export function layoutCantileverRuns(input: CantileverRunInput): CantileverRunLa
 
   // The building holds more than racking, and long runs need cross aisles just
   // as pallet rows do. Both come off the run before anything is laid in it.
-  const usableAlongFt = availableAlong(alongFullFt, acrossFt, input.available);
-  const crossAisles = Math.max(0, Math.round(input.crossAisles ?? crossAislesFor(usableAlongFt)));
-  const alongFt = Math.max(0, usableAlongFt - crossAisles * CROSS_AISLE_WIDTH_FT);
+  const usableAlongFt = usableAlongFor(input);
 
   // A run occupies the product, not the span — the ends hang past the towers.
   const runLengthFt = Math.max(spanFt, productLengthFt);
 
-  // The runs are laid into the building's own segments, so the strip breaks
-  // where the pallet zone breaks. Counting them off the whole length and then
-  // slicing it up let a run straddle an aisle, which is not a run anybody can
-  // load — and put the strip's gaps at different feet from the racking's.
-  const runStartsFt = runStarts(usableAlongFt, runLengthFt, crossAisles);
+  // The runs are laid into segments, so a run never straddles an aisle. On a
+  // floor of nothing else the aisles fall at the ends of runs; on a mixed floor
+  // they are the building's, placed once and handed in, so the strip breaks
+  // where the pallet zone breaks.
+  const { runStartsFt, crossAisleAtFt } =
+    runStarts(usableAlongFt, runLengthFt, input.crossAisles, input.crossAisleAtFt);
+  const crossAisles = crossAisleAtFt.length;
+  const alongFt = Math.max(0, usableAlongFt - crossAisles * CROSS_AISLE_WIDTH_FT);
   const runsPerRow = runStartsFt.length;
 
   const { singleDepthFt, doubleDepthFt } = cantileverRowDepthsFt(input.armLengthIn);
@@ -420,7 +426,7 @@ export function layoutCantileverRuns(input: CantileverRunInput): CantileverRunLa
     runsInLastRow, lastRowPartial: runsInLastRow < runsPerRow,
     short: solved.shortFt > 0,
     crossAisles, crossAisleWidthFt: CROSS_AISLE_WIDTH_FT,
-    crossAisleAtFt: [...crossAisleSpans(usableAlongFt, crossAisles).atFt],
+    crossAisleAtFt,
     runStartsFt,
     columns,
     bandsFt: rowBands, aislesFt: rowAisles,
@@ -591,21 +597,37 @@ function availableAlong(alongFt: number, acrossFt: number, a?: Availability): nu
   return Math.min(alongFt, a.sqFt / acrossFt);
 }
 
-/** Where the cross aisles fall along a row of runs, in envelope feet. */
+/** The run length left once the building has taken its share, ft. */
+export function usableAlongFor(input: CantileverRunInput): number {
+  const alongIsLength = input.orientation === 'length';
+  const alongFullFt = (alongIsLength ? input.buildingLengthFt : input.buildingWidthFt)
+    - input.wallClearanceFt * 2 - DOCK_APRON_FT;
+  const acrossFt = (alongIsLength ? input.buildingWidthFt : input.buildingLengthFt)
+    - input.wallClearanceFt * 2;
+  return availableAlong(alongFullFt, acrossFt, input.available);
+}
+
 /**
- * Where each run starts along a row, laid into the building's segments.
+ * Where each run starts along a row, and where the cross aisles fall.
  *
- * The same segments the pallet zone uses, so an aisle at 80 ft is at 80 ft in
- * both and the gap reads as one route across the floor. A run never straddles
- * an aisle: what will not fit in a segment is spare.
+ * Left to itself, the aisles go at the ends of runs, so the segments hold
+ * whole runs and none is cut. Handed the positions another zone placed, it
+ * takes them, so an aisle is at the same feet in both and the gap reads as one
+ * route across the floor. Either way a run never straddles an aisle: what will
+ * not fit in a segment is spare.
  */
 export function runStarts(
-  usableAlongFt: number, runLengthFt: number, crossAisles: number,
-): number[] {
-  if (runLengthFt <= 0) return [];
-  return fillSegments(
-    crossAisleSpans(usableAlongFt, crossAisles),
-    runLengthFt, runLengthFt + CANTILEVER_RUN_GAP_FT);
+  usableAlongFt: number, runLengthFt: number, crossAisles?: number,
+  atFt?: readonly number[],
+): { runStartsFt: number[]; crossAisleAtFt: number[] } {
+  const pitchFt = runLengthFt + CANTILEVER_RUN_GAP_FT;
+  const spans = atFt
+    ? crossAisleSpansAt(usableAlongFt, atFt)
+    : crossAislePlan({ usableAlongFt, moduleFt: runLengthFt, pitchFt, crossAisles });
+  return {
+    runStartsFt: runLengthFt > 0 ? fillSegments(spans, runLengthFt, pitchFt) : [],
+    crossAisleAtFt: [...spans.atFt],
+  };
 }
 
 /**

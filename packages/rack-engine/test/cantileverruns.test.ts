@@ -6,7 +6,7 @@ import {
   cantileverTowerHeightIn,
   CANTILEVER_MAX_CENTRES_FT, CANTILEVER_MAX_OVERHANG_FT,
   CANTILEVER_PRODUCT_FT, CANTILEVER_RUN_GAP_FT, LONG_HEAD_CLEARANCE_IN,
-  crossAisleSpans, cantileverBom, cantileverChecks, cantileverLevels, ftIn, layoutCantileverRuns,
+  cantileverBom, cantileverChecks, cantileverLevels, ftIn, layoutCantileverRuns,
   normaliseProductLengthFt, solveRows, towerSpacing, towersForRun, usableTowerHeightIn,
   type CantileverRunInput,
 } from '../src/index.js';
@@ -114,19 +114,22 @@ test('a run occupies the product, because the ends hang past the towers', () => 
 
   assert.equal(l.runGapFt, CANTILEVER_RUN_GAP_FT);
 
-  // The runs are laid into the building's segments, so what has to fit is each
-  // segment — not the row as one block. Nothing straddles an aisle.
-  const spans = crossAisleSpans(l.usableAlongFt, l.crossAisles);
-  assert.equal(spans.atFt.length, l.crossAisles);
-  for (const seg of spans.segments) {
-    const inSeg = l.runStartsFt.filter(
-      (x) => x >= seg.startFt - 1e-6 && x < seg.startFt + seg.lengthFt);
-    const used = inSeg.length * l.runLengthFt + Math.max(0, inSeg.length - 1) * l.runGapFt;
-    assert.ok(used <= seg.lengthFt + 1e-6,
-      `${inSeg.length} runs use ${used.toFixed(1)} of a ${seg.lengthFt.toFixed(1)} ft segment`);
-    assert.ok(used + l.runLengthFt + l.runGapFt > seg.lengthFt,
-      'and one more would not fit in it');
+  // The runs are laid into the segments between the aisles, so what has to fit
+  // is each segment — not the row as one block. Nothing straddles an aisle,
+  // and each aisle starts where a run ends rather than partway along one.
+  assert.equal(l.crossAisleAtFt.length, l.crossAisles);
+  const ends = l.runStartsFt.map((x) => x + l.runLengthFt);
+  for (const a of l.crossAisleAtFt) {
+    for (const x of l.runStartsFt) {
+      const over = Math.min(x + l.runLengthFt, a + l.crossAisleWidthFt) - Math.max(x, a);
+      assert.ok(over <= 1e-6, `a run at ${x.toFixed(1)} ft is cut by the aisle at ${a.toFixed(1)} ft`);
+    }
+    assert.ok(ends.some((e) => Math.abs(e - a) < 1e-6), `the aisle at ${a} ft starts at a run end`);
   }
+  const last = ends[ends.length - 1] ?? 0;
+  assert.ok(last <= l.usableAlongFt + 1e-6, 'and the runs stay inside the row');
+  assert.ok(last + l.runGapFt + l.runLengthFt > l.usableAlongFt,
+    'with no room left at the end for one more');
   assert.equal(l.runStartsFt.length, l.runsPerRow, 'the count is what was laid down');
 });
 
@@ -545,7 +548,7 @@ test('availability and cross aisles apply to long goods too', () => {
   assert.ok(most.linearFt < whole.linearFt, `${most.linearFt} ft against ${whole.linearFt}`);
   assert.ok(most.unavailableAlongFt > 0);
 
-  assert.equal(whole.crossAisles, Math.ceil(whole.usableAlongFt / 100) - 1);
+  assert.equal(whole.crossAisles, Math.ceil(whole.usableAlongFt / 120) - 1);
   assert.ok(whole.crossAisles > 0, 'a 240 ft building breaks its runs');
   assert.equal(whole.crossAisleAtFt.length, whole.crossAisles);
   assert.equal(whole.crossAisleWidthFt, 10);

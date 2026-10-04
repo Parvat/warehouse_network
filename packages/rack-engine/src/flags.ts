@@ -46,6 +46,19 @@ export function buildFlags(input: EngineInput, spec: RackSpec, layout: Layout): 
     push('check', 'Beam', 'Three heavy pallets per bay',
       `Three pallets of ${n(pallet.weightLb)} lb on one beam pair is a serious load. A shorter beam carrying two may cost less per position.`);
   }
+  /*
+   * The frame before the floor under it.
+   *
+   * A standard upright is sized for a standard load, and past about fifteen
+   * tons on one frame it is not the standard section any more — heavier steel,
+   * more anchors, and a seismic category that decides both. It fires before the
+   * slab check below, which is the same load asked about from underneath: by
+   * the time the concrete is the question the section already was.
+   */
+  if (spec.frameCapacityLb > 30_000) {
+    push('check', 'Frame', 'Heavy upright required',
+      `A frame carrying ${n(spec.frameCapacityLb)} lb needs a heavier column section and more anchors than standard. Confirm the seismic category too.`);
+  }
   if (spec.loadPerColumnLb > 20_000) {
     push('check', 'Slab', 'Point load at each baseplate',
       `Each column puts about ${n(spec.loadPerColumnLb)} lb into the slab. Have floor thickness and footings checked before anchoring.`);

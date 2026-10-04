@@ -1,33 +1,28 @@
 'use client';
 
-import { memo, useId, useState, Fragment, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { memo, useId, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { useCallback, useRef } from 'react';
-import type { Bom as BomData, Flag, Orientation, TruckKind } from '@trace/rack-engine';
-import { ColumnNotice } from './planner/ColumnMarks';
+import type { Flag, Orientation, TruckKind } from '@trace/rack-engine';
 import PlanFigure from './planner/PlanFigure';
 import ElevationFigure from './planner/ElevationFigure';
 import { CantileverPlanFigure, CantileverElevationFigure } from './planner/CantileverFigures';
 import MixedPlanFigure from './planner/MixedPlanFigure';
+import Assumptions from './planner/Assumptions';
 import { FIG_BOX, planBox, elBox } from './planner/figText';
 import { cx } from '@/lib/cx';
 import {
   usePlannerModel,
-  type ColumnsMode, type PlannerHandoff, type TypeCell,
+  type PlannerHandoff, type TypeCell,
 } from '@/lib/usePlannerModel';
 import { BUILDING_FT, ftIn } from '@trace/rack-engine';
 
+
 export type { PlannerHandoff } from '@/lib/usePlannerModel';
 
-/** Segmented options, hoisted so the JSX carries no type assertions. */
-const COLUMNS_OPTIONS: readonly (readonly [ColumnsMode, string])[] = [
-  ['grid', 'Grid'], ['later', 'Later'],
-];
 const STORING_OPTIONS: readonly (readonly ['pallets' | 'long' | 'both', string])[] = [
   ['pallets', 'Pallets'], ['long', 'Long'], ['both', 'Both'],
 ];
-const ROWS_RUN_OPTIONS: readonly (readonly [Orientation, string])[] = [
-  ['length', '↔'], ['width', '↕'],
-];
+
 
 /**
  * A3 — the rack sizing sheet.
@@ -59,6 +54,26 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
   const n = (v: React.ReactNode, ...rest: React.ReactNode[]) => (
     <><b>{v}</b>{rest.length > 0 ? <> {rest}</> : null}</>
   );
+  /*
+   * The aisle width, said once for the floor rather than on every gap in the
+   * plan, where it repeated one figure down the drawing and crowded the rows.
+   * Read off the aisles the layout actually has — on a mixed floor the strip's
+   * own, the one both zones share and the pallet zone's — so where they are not
+   * all one width the strip gives the range. A floor of one row has no aisle,
+   * and says nothing.
+   */
+  const aisleCell = (aislesFt: readonly number[]): React.ReactNode[] => {
+    const widths = [...new Set(aislesFt.map((a) => +a.toFixed(1)))].sort((a, b) => a - b);
+    const lo = widths[0], hi = widths[widths.length - 1];
+    if (lo === undefined || hi === undefined) return [];
+    return lo === hi
+      ? [n(`${lo}′`, 'AISLE')]
+      : [<><b>{lo}–{hi}′</b> AISLES</>];
+  };
+  const aisles = aisleCell(isMixed
+    ? [...mixed.strip.aislesFt.map((a) => a.depth), mixed.sharedAisleFt,
+      ...mixed.pallets.aislesFt.map((a) => a.depth)]
+    : (isLong ? runs : layout).aislesFt.map((a) => a.depth));
   const runSummary: React.ReactNode[] = isLong
     ? [
       n(`${runs.productLengthFt}′`, 'PRODUCT'),
@@ -69,17 +84,22 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
       n(runs.towersPerRun, 'TOWERS/RUN'),
       ...(runs.lastRowPartial
         ? [<>LAST ROW <b>{runs.runsInLastRow}</b> OF <b>{runs.runsPerRow}</b></>] : []),
+      ...aisles,
       n(`${runs.spareFt.toFixed(0)}′`, 'SPARE'),
     ]
+    // A mixed floor reads its own pallet zone, which is narrower than the
+    // building and — with the floor given as an area — longer along it. The
+    // whole-building pallet layout described a floor that was not drawn.
     : isMixed
       ? [
         n(mixed.cantileverRows, 'CANT', mixed.cantileverRows === 1 ? 'ROW' : 'ROWS'),
-        n(layout.rows, 'PALLET ROWS'),
-        n(layout.bays, 'BAYS/ROW'),
+        n(mixed.pallets.rows, 'PALLET ROWS'),
+        n(mixed.pallets.bays, 'BAYS/ROW'),
         ...(mixed.strip.lastRowPartial
           ? [<>STRIP LAST ROW <b>{mixed.strip.runsInLastRow}</b> OF <b>{mixed.strip.runsPerRow}</b></>]
           : []),
-        n(`${Math.max(0, layout.spareFt).toFixed(0)}′`, 'SPARE'),
+        ...aisles,
+        n(`${Math.max(0, mixed.pallets.spareFt).toFixed(0)}′`, 'SPARE'),
       ]
       : m.type.onePalletLanes
         ? [
@@ -88,8 +108,7 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
           n(layout.deep, 'DEEP'),
           n(layout.levels, 'HIGH'),
           n(layout.palletsAcross, 'WIDE'),
-          ...(layout.baysLostToColumns > 0
-            ? [n(layout.baysLostToColumns, 'LOST TO COLUMNS')] : []),
+          ...aisles,
           n(`${Math.max(0, layout.spareFt).toFixed(0)}′`, 'SPARE'),
         ]
         : [
@@ -100,14 +119,38 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
           ...(layout.deep > 1
             ? [n(layout.deep, 'DEEP'), n(layout.levels, 'HIGH'), n(layout.palletsAcross, 'WIDE')]
             : []),
-          ...(layout.baysLostToColumns > 0
-            ? [n(layout.baysLostToColumns, 'LOST TO COLUMNS')] : []),
+          ...aisles,
           n(`${Math.max(0, layout.spareFt).toFixed(0)}′`, 'SPARE'),
         ];
 
   const blocking = m.flags.filter((f) => f.severity === 'blocking').length;
   const checks = m.flags.filter((f) => f.severity === 'check').length;
   const notes = m.flags.filter((f) => f.severity === 'opportunity').length;
+
+  /*
+   * Which severity the column is showing.
+   *
+   * The tally used to be a readout: three numbers over a list that ignored
+   * them. On a sheet with a dozen flags the one blocking item is the thing a
+   * reader is looking for, and it was somewhere down a scroll among the notes.
+   * The counts are the way in now — press a number and the column is that.
+   *
+   * Presentation state, so it lives here rather than in the model.
+   */
+  const [flagTab, setFlagTab] = useState<Flag['severity'] | 'all' | 'context'>('all');
+  // A tab whose count has gone to zero is a dead end, so the column falls back
+  // to all rather than showing nothing and leaving the reader to work out why.
+  // The trade notes are always there, so All always has at least them and the
+  // count on each tab is what pressing it shows.
+  const counted: Record<Flag['severity'] | 'all' | 'context', number> = {
+    all: m.flags.length + GOOD_TO_KNOW.length,
+    blocking, check: checks, opportunity: notes, context: GOOD_TO_KNOW.length,
+  };
+  const tab = counted[flagTab] > 0 ? flagTab : 'all';
+  const shown = tab === 'all' || tab === 'context'
+    ? (tab === 'all' ? m.flags : [])
+    : m.flags.filter((f) => f.severity === tab);
+  const showsTrade = tab === 'all' || tab === 'context';
 
   return (
     <div className="a3">
@@ -137,7 +180,7 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
               answers it. One panel down the left costs the drawing 296px and
               gives the reader a field and its consequence in one glance. */}
           <div className="deck">
-            <aside className="panel" aria-label="Rack schedule">
+            <aside className={cx('panel', isMixed && 'tall')} aria-label="Rack schedule">
               {/* Lifted out of the flow, so a long schedule scrolls inside the
                   panel instead of making the row taller than the drawing. The
                   same trick the flag column uses. */}
@@ -149,108 +192,61 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                       750 ft raises a flag advising it be zoned, and is drawn in
                       full anyway. */}
                   <div className="row r3">
-                    <NumField label="Length" value={building.lengthFt} onChange={m.onBuilding.lengthFt}
+                    <NumField label="Length" unit="ft" value={building.lengthFt} onChange={m.onBuilding.lengthFt}
                       min={BUILDING_FT.min} max={BUILDING_FT.max} step={5} />
-                    <NumField label="Width" value={building.widthFt} onChange={m.onBuilding.widthFt}
+                    <NumField label="Width" unit="ft" value={building.widthFt} onChange={m.onBuilding.widthFt}
                       min={BUILDING_FT.min} max={BUILDING_FT.max} step={5} />
-                    <NumField label="Clear" value={building.clearHeightFt}
+                    <NumField label="Clear" unit="ft" value={building.clearHeightFt}
                       onChange={m.onBuilding.clearHeightFt} min={10} />
                   </div>
                   {/* A footprint is not a storage area: staging, shipping, offices
-                      and charging take a fifth to a third of it. One control: the
-                      percentages a customer can estimate, and an area for the one
-                      who has measured it. */}
+                      and charging take a fifth to a third of it. Typed as a
+                      percentage of the floor, and an empty box is all of it. */}
                   <div className="row r2">
                     <Seg label="Sprinklers" value={m.sprinklers} onChange={m.setSprinklers}
                       options={[['ceiling', 'Ceiling'], ['in-rack', 'In-rack']] as const} />
-                    <SelectField label="Rack area %"
-                      value={m.building.available === 'area' ? 'area' : String(m.building.availablePct)}
-                      onChange={(v) => (v === 'area' ? m.setAvailable('area')
-                        : m.setAvailablePct(Number(v)))}
-                      options={[
-                        ...m.availablePcts.map((n) => [String(n), `${n}%`] as const),
-                        ['area', 'Enter area'] as const,
-                      ]} />
+                    <NumField label="Rack area" unit="%" value={m.building.availablePct}
+                      onChange={m.setAvailablePct} min={1} max={100} fallback={100} />
                   </div>
-                  {m.building.available === 'area' && (
-                    <div className="row r2">
-                      <NumField label="Usable sq ft" value={m.building.usableSqFt}
-                        onChange={m.setUsableSqFt} min={500} step={500} />
-                    </div>
-                  )}
-                  {/* Columns are the constraint the layout is designed around,
-                      not a deduction applied to a finished one. */}
-                  <div className="row r1">
-                    <Seg label="Columns" value={m.building.columns}
-                      onChange={m.setColumnsMode} options={COLUMNS_OPTIONS} />
-                  </div>
-                  {m.building.columns === 'grid' && (
-                    <div className="row r2">
-                      <NumField label="Grid X ft" value={m.building.gridXFt}
-                        onChange={m.setGridXFt} min={8} step={1} />
-                      <NumField label="Grid Y ft" value={m.building.gridYFt}
-                        onChange={m.setGridYFt} min={8} step={1} />
-                    </div>
-                  )}
                 </PanelGroup>
 
-                <PanelGroup no="02"
-                  name={isMixed ? 'Stored goods' : isLong ? 'Cantilever' : 'Pallet'}
-                  note={isMixed ? 'pallets and long stock'
-                    : isLong ? 'what you are storing on it' : 'sets beam length and capacity'}>
+                {/* A long-goods customer has no pallet to describe, so the
+                    section is not asked at all rather than asked empty — and the
+                    numbering closes up behind it. */}
+                {asksPallet && (
+                  <PanelGroup no="02" name="Pallet" note="sets beam length and capacity">
+                    {/* Four figures describing one object, on one line. The
+                        units ride inside the boxes, so the labels stay one word
+                        and the weight gets the extra width a four-figure load
+                        needs. */}
+                    <div className="row r4w">
+                      <NumField label="Depth" unit="in" value={m.pallet.depthIn} onChange={m.onPallet.depthIn} min={24} />
+                      <NumField label="Width" unit="in" value={m.pallet.widthIn} onChange={m.onPallet.widthIn} min={24} />
+                      <NumField label="Load" unit="in" value={m.pallet.loadHeightIn} onChange={m.onPallet.loadHeightIn} min={12} />
+                      <NumField label="Weight" unit="lb" value={m.pallet.weightLb} onChange={m.onPallet.weightLb} min={100} step={50} />
+                    </div>
+                  </PanelGroup>
+                )}
 
-                  {/* Split by family the way 03 is: a pallet customer has no use
-                      for a product length, and a long-goods one has none for a
-                      pallet. */}
-                  {asksPallet && (
-                    <>
-                      {isMixed && <div className="subhead">Pallet</div>}
-                      {/* Four figures describing one object, on one line. The
-                          labels lose their units to make that fit rather than
-                          losing their size — a label nobody can read is worse
-                          than a label that trusts the reader to know a pallet
-                          is weighed in pounds. */}
-                      <div className="row r4">
-                        <NumField label="Depth" value={m.pallet.depthIn} onChange={m.onPallet.depthIn} min={24} />
-                        <NumField label="Width" value={m.pallet.widthIn} onChange={m.onPallet.widthIn} min={24} />
-                        <NumField label="Load" value={m.pallet.loadHeightIn} onChange={m.onPallet.loadHeightIn} min={12} />
-                        <NumField label="Weight" value={m.pallet.weightLb} onChange={m.onPallet.weightLb} min={100} step={50} />
-                      </div>
-                    </>
-                  )}
-
-                  {asksCant && (
-                    <>
-                      {isMixed && <div className="subhead">Cantilever</div>}
-                      <div className="row r2">
-                        <NumField label="Product ft" value={m.cant.productLengthFt}
-                          onChange={m.onCant.productLengthFt} min={m.productFt.min}
-                          max={m.productFt.max} fallback={m.productFt.fallback} />
-                        {/* Rows follow from this: a customer knows how much stock
-                            they have, not how many rows it takes. */}
-                        <NumField label="Linear ft" value={m.cant.linearFeetNeededFt}
-                          onChange={m.onCant.linearFeetNeededFt} min={50} step={50}
-                          fallback={500} />
-                      </div>
-                    </>
-                  )}
-                </PanelGroup>
-
-                <PanelGroup no="03" name="Configuration" note="how it is laid out">
-                  <div className="row r1">
+                <PanelGroup no={asksPallet ? '03' : '02'} name="Configuration" note="how it is laid out">
+                  <div className="row rstore">
                     <Seg label="Storing" value={m.family}
                       onChange={m.setFamily} options={STORING_OPTIONS} />
-                  </div>
-                  <div className="row r2">
-                    <Seg label="Rows run" value={m.config.orientation} onChange={m.setOrientation}
-                      options={ROWS_RUN_OPTIONS} />
-                    <StepperField label="Cross aisles" value={m.crossAisles}
-                      auto={m.crossAislesAuto} min={0} max={6} onChange={m.setCrossAisles} />
+                    {/* One control rather than two: the rows run one way or the
+                        other, so the question is which. The button says where it
+                        is and turning it is the other answer. */}
+                    <ToggleField label="Rows run"
+                      value={m.config.orientation === 'length' ? '↔ Length' : '↕ Width'}
+                      onToggle={() => m.setOrientation(
+                        m.config.orientation === 'length' ? 'width' : 'length')} />
+                    {/* No cross-aisle control: the engine puts one in every
+                        120 ft of run, on a bay boundary, and the egress flag
+                        says so. */}
                   </div>
 
                   {asksPallet && (
                     <>
-                      <div className="subhead">Pallet racking</div>
+                      <div className="glabel">Pallet racking</div>
                       <div className="row r2">
                         {/* "AISLE: 12.5" means nothing to somebody who has never
                             specified racking; everybody knows their truck, and
@@ -264,24 +260,35 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                             ask. Lane and cart depth is the building's answer,
                             not a question: it is derived and reported. */}
                         {!m.type.onePalletLanes && (
-                          <SelectField label="Beam" value={String(m.config.beamIn)}
+                          <SelectField label="Beam" unit="in" value={String(m.config.beamIn)}
                             onChange={(v) => m.setBeamIn(Number(v))}
-                            options={m.beamOptions.map((b) => [String(b), `${b} in`] as const)} />
+                            options={m.beamOptions.map((b) => [String(b), String(b)] as const)} />
                         )}
                       </div>
                     </>
                   )}
 
+                  {/* What goes on the arms and how much of it, then how far
+                      apart the arms are: the long-goods questions, together. */}
                   {asksCant && (
                     <>
-                      <div className="subhead">Cantilever</div>
-                      <div className="row r2">
-                        {/* Arm levels are a consequence of this and the clear
-                            height, so the spacing is asked for and the levels
-                            are reported. */}
-                        <SelectField label="Arm spacing" value={String(m.cant.armSpacingIn)}
-                          onChange={(v) => m.onCant.armSpacingIn(Number(v))}
-                          options={m.armSpacingOptions.map((a) => [String(a), `${a} in`] as const)} />
+                      <div className="glabel">Cantilever</div>
+                      <div className="row r3">
+                        <NumField label="Product" unit="ft" value={m.cant.productLengthFt}
+                          onChange={m.onCant.productLengthFt} min={m.productFt.min}
+                          max={m.productFt.max} fallback={m.productFt.fallback} />
+                        {/* Rows follow from this: a customer knows how much stock
+                            they have, not how many rows it takes. */}
+                        <NumField label="Linear" unit="ft" value={m.cant.linearFeetNeededFt}
+                          onChange={m.onCant.linearFeetNeededFt} min={50} step={50}
+                          fallback={500} />
+                        {/* Typed, nothing offered: an arm pitch is a measurement
+                            off a drawing, not a choice from a list. Any positive
+                            figure stands; the engine floors it at an inch. Arm
+                            levels follow from this and the clear height. */}
+                        <NumField label="Arm spacing" unit="in" value={m.cant.armSpacingIn}
+                          onChange={m.onCant.armSpacingIn} min={1}
+                          fallback={24} />
                       </div>
                     </>
                   )}
@@ -314,8 +321,6 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                   orientation={m.config.orientation} boxClass="pl" />
               ) : (
                 <PlanFigure kind={m.kind} layout={layout} box={planBox()}
-                  gridLabel={m.building.columns === 'grid'
-                    ? `COLUMN GRID ${m.building.gridXFt}′ × ${m.building.gridYFt}′` : undefined}
                   buildingLengthFt={building.lengthFt} buildingWidthFt={building.widthFt}
                   frameDepthIn={spec.frameDepthIn} flueIn={layout.flueIn}
                   aisleFt={m.aisleFt} wallClearanceFt={m.wallClearanceFt}
@@ -337,11 +342,11 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                     palletDepthIn={m.pallet.depthIn}
                     lane={m.type.onePalletLanes} deep={layout.deep} openEnds={m.type.openEnds}
                     depthSection={m.type.depthSection}
-                    box={elBox(building.lengthFt, building.widthFt, true)} boxClass="el"
+                    box={elBox(true)} boxClass="el"
                     title="Fig. 2 — Pallets" sub={`${spec.palletsPerBay} pallets / bay`} />
                   <CantileverElevationFigure layout={mixed.strip} boxClass="el"
                     clearHeightFt={building.clearHeightFt}
-                    box={elBox(building.lengthFt, building.widthFt, true)}
+                    box={elBox(true)}
                     labelClearHeight={false}
                     head={<ElHead title="Fig. 3 — Cantilever"
                       sub={`${mixed.strip.levels} arm levels + base`} />} />
@@ -349,7 +354,7 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
               ) : isLong ? (
                 <CantileverElevationFigure layout={runs} boxClass="el"
                   clearHeightFt={building.clearHeightFt}
-                  box={elBox(building.lengthFt, building.widthFt)}
+                  box={elBox()}
                   head={<ElHead sub={`${runs.levels} arm levels + base`} />} />
               ) : (
                 <ElevationFigure spec={spec} clearHeightFt={building.clearHeightFt} boxClass="el"
@@ -357,7 +362,7 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                   palletDepthIn={m.pallet.depthIn}
                   lane={m.type.onePalletLanes} deep={layout.deep} openEnds={m.type.openEnds}
                   depthSection={m.type.depthSection}
-                  box={elBox(building.lengthFt, building.widthFt)}
+                  box={elBox()}
                   sub={m.type.onePalletLanes
                     ? `1 pallet / lane · ${layout.deep} deep`
                     : `${spec.palletsPerBay} pallets / bay`} />
@@ -389,10 +394,6 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                   </div>
                 ))}
               </div>
-              <p className="fine">
-                PRELIMINARY SIZING ONLY. NOT A LOAD RATING. CAPACITIES TO BE CONFIRMED BY A
-                QUALIFIED ENGINEER PRIOR TO INSTALLATION.
-              </p>
             </div>
             </div>
 
@@ -402,43 +403,65 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
                 the count in the header is for. */}
             <div className="flagcol">
               <div className="flaginner">
-              <div className="flagcount">
-                <span>Blocking <b>{blocking}</b></span>
-                <span>Check <b>{checks}</b></span>
-                <span>Notes <b>{notes}</b></span>
-              </div>
+              {/* Only the severities this sheet actually has. A tab reading
+                  zero is not a filter — pressing it can only empty the column —
+                  and a row of them says most of what is on the sheet is what is
+                  not on it. Nothing to report is the empty list's to say. */}
+              {counted.all > 0 && (
+                <div className="flagcount" role="tablist" aria-label="Filter by severity">
+                  {([
+                    ['all', 'All', counted.all],
+                    ['blocking', 'Blocking', blocking],
+                    ['check', 'Check', checks],
+                    ['opportunity', 'Notes', notes],
+                    ['context', 'Good to know', counted.context],
+                  ] as const).filter(([, , count]) => count > 0).map(([key, label, count]) => (
+                    <button key={key} type="button" role="tab" className={cx('flagtab', tab === key && 'on')}
+                      aria-selected={tab === key} onClick={() => setFlagTab(key)}>
+                      {label} <b>{count}</b>
+                    </button>
+                  ))}
+                </div>
+              )}
               {/* One column for everything Trace has to tell the customer: the
                   notes used to repeat the flags in a stack below the placard,
                   which read as two lists of the same thing. */}
               <div className="flags">
-                {m.aisleColumns && (
-                  <ColumnNotice inAisles={m.aisleColumns.count} holds={m.aisleColumns.holds} />
-                )}
-                {m.stripCost && (
+                {/* Everything in this column that is not a flag belongs to the
+                    whole sheet rather than to one severity, so it reads on All
+                    and stands aside while the reader is looking at one kind. */}
+                {tab === 'all' && m.stripCost && (
                   <p className="stripcost" aria-live="polite">
                     The cantilever strip takes <b>{m.stripCost.widthFt.toFixed(1)} ft</b> of width
                     and costs about <b>{m.stripCost.positions.toLocaleString()} pallet positions</b>.
                     Without it the building would hold ~{m.stripCost.without.toLocaleString()}.
                   </p>
                 )}
-                {m.cantileverFill && <p className="colnote">{m.cantileverFill}</p>}
-                {m.columnNote && <p className="colnote">{m.columnNote}</p>}
-                {m.flags.length === 0 ? (
+                {tab === 'all' && m.cantileverFill && <p className="colnote">{m.cantileverFill}</p>}
+                {tab !== 'context' && (shown.length === 0 ? (
                   <p className="emptyflags">No flags — nothing here needs a second look.</p>
-                ) : m.flags.map((f) => <FlagCard key={f.title} flag={f} />)}
-                {m.tunnelNote && <p className="advice">{m.tunnelNote}</p>}
+                ) : shown.map((f) => <FlagCard key={f.title} flag={f} />))}
+                {/* After the flags about this building, because that is the
+                    order a reader wants them in: what needs attention here,
+                    then what is worth knowing anywhere. */}
+                {showsTrade && GOOD_TO_KNOW.map((note) => (
+                  <GoodToKnowCard key={note.label} note={note} />
+                ))}
+                {tab === 'all' && m.tunnelNote && <p className="advice">{m.tunnelNote}</p>}
                 {/* Fire code is the AHJ's call, not ours: Trace names the reading
                     it worked from so a customer can disagree with it knowingly. It
                     reads here rather than under the stepper it explains — the
                     schedule is controls, everything Trace has to say is this
                     column, and a standing caveat comes after the flags that are
                     about this building in particular. */}
-                <p className="advice">
-                  A continuous rack row longer than about 100 ft usually needs a cross aisle for
-                  circulation and egress. Fire code requirements vary by jurisdiction, commodity
-                  and storage height — confirm with your dealer.
-                </p>
-                {m.assumptions.length > 0 && (
+                {tab === 'all' && (
+                  <p className="advice">
+                    A continuous rack row longer than about 100 ft usually needs a cross aisle for
+                    circulation and egress. Fire code requirements vary by jurisdiction, commodity
+                    and storage height — confirm with your dealer.
+                  </p>
+                )}
+                {tab === 'all' && m.assumptions.length > 0 && (
                   <p className="assumed">
                     <b>Trace assumed:</b> {m.assumptions.join(' · ')}.{' '}
                     <b>Change any of these above.</b>
@@ -450,27 +473,17 @@ export default function Planner({ handoff = {} }: { handoff?: PlannerHandoff }) 
           </div>
         </section>
 
-        <BomPanel bom={m.bom} standard={m.standardBom} long={isLong} mixed={isMixed}
-          mixedDealer={isMixed && !m.palletBomCountable ? m.type.name : undefined}
-          capacity={isMixed
-            ? `${mixed.pallets.positions.toLocaleString()} pallet positions · `
-              + `~${mixed.strip.linearFt.toLocaleString()} linear ft`
-            : isLong ? `~${runs.linearFt.toLocaleString()} linear ft`
-            : `${layout.positions.toLocaleString()} pallet positions`}
-          typeName={isMixed ? `Cantilever and ${m.type.name}` : isLong ? 'Cantilever' : m.type.name} />
+        <NextStep />
 
         <footer>
           <div className="rulerow">
             <span>Trace — warehouse layout, procurement and lifecycle</span>
             <span className="ln" /><span>Rev A</span>
           </div>
-          <p className="fine">
-            Preliminary sizing guidance generated from the dimensions entered above. Not an
-            engineered design and carries no load rating. Final beam and upright capacities,
-            seismic bracing, base plate and anchor design, flue spacing, sprinkler clearance and
-            egress routing must be determined by a qualified engineer and permitted with the local
-            authority having jurisdiction.
-          </p>
+          {/* The sheet's one disclaimer. The placard and this footer each used
+              to carry their own, in different words; the rest lives in the
+              panel this line opens. */}
+          <Assumptions />
         </footer>
       </div>
     </div>
@@ -566,9 +579,15 @@ function PanelGroup({ no, name, note, children }: {
  * while it is being typed, or 4 could not be typed on the way to 40.
  */
 const NumField = memo(function NumField({
-  label, value, onChange, min, max, step = 1, wide, narrow, roomy, fallback, hint,
+  label, value, onChange, min, max, step = 1, wide, narrow, roomy, fallback, hint, unit,
 }: {
   label: string; value: number; onChange: (v: number) => void;
+  /**
+   * What the figure is in, set faintly inside the box after it. In the box
+   * rather than the label, so the label stays one word and the unit sits
+   * against the number it belongs to.
+   */
+  unit?: string;
   min?: number; max?: number; step?: number; wide?: boolean;
   /** For a label the standard width would clip. */
   roomy?: boolean;
@@ -594,56 +613,21 @@ const NumField = memo(function NumField({
   return (
     <div className={cx('f', wide && 'w4', narrow && 'w2', roomy && 'w5', hint && 'hashint')}>
       <label htmlFor={id}>{label}</label>
-      <input id={id} type="number" value={shown} min={min} max={max} step={step}
-        aria-describedby={hint ? `${id}-hint` : undefined}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          const n = Number.parseFloat(e.target.value);
-          if (Number.isFinite(n)) onChange(n);
-        }}
-        onBlur={settle}
-        onKeyDown={(e) => { if (e.key === 'Enter') settle(); }} />
+      <Boxed unit={unit} id={id}>
+        <input id={id} type="number" value={shown} min={min} max={max} step={step}
+          aria-describedby={cx(unit && `${id}-unit`, hint && `${id}-hint`) || undefined}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            const n = Number.parseFloat(e.target.value);
+            if (Number.isFinite(n)) onChange(n);
+          }}
+          onBlur={settle}
+          onKeyDown={(e) => { if (e.key === 'Enter') settle(); }} />
+      </Boxed>
       {hint && <span className="hint" id={`${id}-hint`}>{hint}</span>}
     </div>
   );
 });
-
-/**
- * A figure Trace worked out, with a way to disagree.
- *
- * Not a plain number box: the customer is not being asked for this, they are
- * being shown what was assumed and given the means to override it. So it reads
- * as a figure first, carries an `auto` marker while it is still Trace's, and
- * offers the way back once it is not.
- */
-function StepperField({ label, value, auto, min, max, onChange }: {
-  label: string; value: number; auto: boolean; min: number; max: number;
-  onChange: (v: number | undefined) => void;
-}) {
-  const id = useId();
-  const step = (by: number) => onChange(Math.max(min, Math.min(max, value + by)));
-  return (
-    <div className="f stepfield">
-      {/* The marker rides on the label's line, not under the stepper: a line
-          below made this the one control in the row standing 11px clear of the
-          baseline everything else sits on. */}
-      <div className="steplbl">
-        <label htmlFor={id}>{label}</label>
-        {auto
-          ? <span className="auto">auto</span>
-          : <button type="button" className="reauto"
-              onClick={() => onChange(undefined)}>reset</button>}
-      </div>
-      <div className="step">
-        <button type="button" onClick={() => step(-1)} disabled={value <= min}
-          aria-label={`One fewer ${label.toLowerCase()}`}>&#8722;</button>
-        <output id={id}>{value}</output>
-        <button type="button" onClick={() => step(1)} disabled={value >= max}
-          aria-label={`One more ${label.toLowerCase()}`}>+</button>
-      </div>
-    </div>
-  );
-}
 
 /** A derived figure: shown so the customer knows it exists, never edited. */
 function ReadOnlyField({ label, value }: { label: string; value: string }) {
@@ -656,8 +640,27 @@ function ReadOnlyField({ label, value }: { label: string; value: string }) {
   );
 }
 
+/**
+ * A field's box, with its unit set inside it after the value.
+ *
+ * The unit is drawn over the control rather than typed into it, so it never
+ * reaches the value and is never selected with it. Its length is handed to the
+ * CSS so the control keeps clear of it.
+ */
+function Boxed({ unit, id, select, children }: {
+  unit?: string; id: string; select?: boolean; children: React.ReactNode;
+}) {
+  return (
+    <div className={cx('fbox', select && 'sel', unit && 'hasunit')}
+      style={unit ? { ['--u' as string]: unit.length } : undefined}>
+      {children}
+      {unit && <span className="unit" id={`${id}-unit`}>{unit}</span>}
+    </div>
+  );
+}
+
 function SelectField<T extends string>({
-  label, value, onChange, options, combo, roomy, mid,
+  label, value, onChange, options, combo, roomy, mid, unit,
 }: {
   label: string; value: T; onChange: (v: T) => void;
   options: readonly (readonly [T, string])[]; combo?: boolean;
@@ -665,14 +668,41 @@ function SelectField<T extends string>({
   roomy?: boolean;
   /** Between the two: a percentage, or one short word. */
   mid?: boolean;
+  /** As on a number field: the unit inside the box, after the value. */
+  unit?: string;
 }) {
   const id = useId();
   return (
     <div className={cx('f', combo && 'wcombo', mid && 'w3', roomy && 'w5')}>
       <label htmlFor={id}>{label}</label>
-      <select id={id} value={value} onChange={(e) => onChange(e.target.value as T)}>
-        {options.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
-      </select>
+      <Boxed unit={unit} id={id} select>
+        {/* Mono is for numbers: a list of words reads in the sans. */}
+        <select id={id} value={value} onChange={(e) => onChange(e.target.value as T)}
+          className={cx(!options.every(([, t]) => /^[\d.,\s]+$/.test(t)) && 'words') || undefined}
+          aria-describedby={unit ? `${id}-unit` : undefined}>
+          {options.map(([v, t]) => <option key={v} value={v}>{t}</option>)}
+        </select>
+      </Boxed>
+    </div>
+  );
+}
+
+/**
+ * A two-state answer, given as the state itself.
+ *
+ * The sheet's segmented control shows both options and marks one — right where
+ * the options are worth seeing side by side. Where there are only two and they
+ * are opposites, that spends a field's width saying what the answer is not.
+ * This says what it is, and pressing it gives the other.
+ */
+function ToggleField({ label, value, onToggle }: {
+  label: string; value: string; onToggle: () => void;
+}) {
+  const id = useId();
+  return (
+    <div className="f w3">
+      <label htmlFor={id}>{label}</label>
+      <button id={id} type="button" className="toggle" onClick={onToggle}>{value}</button>
     </div>
   );
 }
@@ -697,7 +727,7 @@ function Seg<T extends string>({
   );
 }
 
-/* ── comparison, flags, bill of materials ──────────────────────────────── */
+/* ── comparison, flags, next step ──────────────────────────────────────── */
 
 /**
  * The only way to change type, now that the duplicate select is gone — so it
@@ -751,6 +781,67 @@ const TypeRow = memo(function TypeRow(
   );
 });
 
+/**
+ * What a buyer should know about racking, as against this racking.
+ *
+ * The computed flags are about the sheet in front of you — this beam, this
+ * frame, this floor — and every one of them names a number the layout produced.
+ * These name none, because they are true of the trade rather than of the
+ * building: they do not depend on an input and so they never change, never
+ * fire and never clear. That is exactly why they sit in their own category
+ * instead of being mixed in with the checks, where a reader learns to read a
+ * flag as "something about my building needs attention".
+ *
+ * Static by intention. If one of these ever needs a number in it, it has stopped
+ * being trade knowledge and belongs in `flags.ts` with the rest of the checks.
+ */
+const GOOD_TO_KNOW: readonly { label: string; body: string; warn?: true }[] = [
+  {
+    label: 'Columns',
+    body: 'Building columns affect how much racking fits: a column in a rack flue costs '
+      + 'nothing, but one in a bay or aisle can cost pallet positions. This estimate '
+      + "doesn't place your columns — a dealer or Trace CAD lays rows out to work around them.",
+  },
+  {
+    label: 'Safety',
+    body: 'Racking must be inspected at least annually by a qualified inspector, with '
+      + 'regular in-house visual checks (ANSI/RMI MH16.1, OSHA). A load-capacity placard '
+      + 'must be posted on every installed rack.',
+  },
+  {
+    label: 'Fire',
+    body: 'In-rack sprinklers, flue spacing and commodity classification are set by fire '
+      + 'code and vary by jurisdiction — confirm with your dealer and local authority.',
+  },
+  {
+    label: 'Beams',
+    body: "Beam size shown is approximate. Final capacity, deflection and load limits come "
+      + "from the manufacturer's chart and vary by maker — your dealer confirms the section.",
+  },
+  {
+    // The one of the five that is about what this sheet does not do, so it keeps
+    // the check colour's marker inside the calmer category.
+    label: 'Not modelled',
+    warn: true,
+    body: 'Seismic bracing and anchors, floor slab and point loading, and egress routing '
+      + 'are not modelled here — a dealer or structural engineer confirms these.',
+  },
+];
+
+const GoodToKnowCard = memo(function GoodToKnowCard(
+  { note }: { note: (typeof GOOD_TO_KNOW)[number] },
+) {
+  return (
+    <div className="flag know">
+      <b>
+        {note.label}
+        {note.warn && <i className="knowwarn" aria-label="not modelled">⚠</i>}
+      </b>
+      {note.body}
+    </div>
+  );
+});
+
 const FlagCard = memo(function FlagCard({ flag }: { flag: Flag }) {
   const cls = flag.severity === 'blocking' ? 'flag'
     : flag.severity === 'check' ? 'flag warn' : 'flag note';
@@ -762,153 +853,40 @@ const FlagCard = memo(function FlagCard({ flag }: { flag: Flag }) {
   );
 });
 
+
 /**
- * Collapsed by default. Where the material is not frames, beam pairs and wire
- * decks, a counted bill would be misleading, so that type gets the dealer
- * hand-off instead of a table.
+ * Where the sheet hands off, in the place the bill of materials used to sit.
+ *
+ * The bill counted frames and beams off a preliminary layout, and a counted
+ * list reads as a quote however it is captioned. Quantities are a dealer's to
+ * confirm against a real building, so the sheet ends by saying who does that.
+ *
+ * Neither destination exists yet. Connecting with a dealer is an action, so it
+ * will sit behind sign-in (everything above stays anonymous); until there is a
+ * sign-in and a dealer flow, both buttons say so rather than going nowhere.
  */
-const BomPanel = memo(function BomPanel({
-  bom, standard, long, mixed, capacity, typeName, mixedDealer,
-}: {
-  bom: BomData; standard: boolean; long: boolean; capacity: string; typeName: string;
-  /** Two families in one bill, filed under a heading each. */
-  mixed?: boolean;
-  /** Mixed sheets whose pallet type has no countable bill: named here. */
-  mixedDealer?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const seen = new Set<string>();
-
-  const csv = () => {
-    const rows = [
-      ['Group', 'Item', 'Description', 'Qty', 'Unit lb', 'Total lb'],
-      ...bom.lines.map((l) => [l.group, l.item, l.description, l.qty, l.unitWeightLb, Math.round(l.totalWeightLb)]),
-      ['', 'Total', '', '', '', Math.round(bom.totalWeightLb)],
-    ];
-    const body = rows.map((r) => r.map((c) => {
-      const v = String(c);
-      return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
-    }).join(',')).join('\n');
-    const url = URL.createObjectURL(new Blob([body], { type: 'text/csv;charset=utf-8' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `trace-bom-${typeName.toLowerCase().replace(/\W+/g, '-')}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
+function NextStep() {
+  const [pending, setPending] = useState<'dealer' | 'cad' | null>(null);
   return (
-    <section className="bom">
-      <div className="bomhead">
-        {/* The whole row is the control, not just the chevron — a 26px target
-            for a panel this size read as decoration. A native button carries
-            Enter and Space for free. */}
-        <button type="button" className="bomtog" aria-expanded={open}
-          onClick={() => setOpen((v) => !v)}>
-          <span className="tog" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none"
-              strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9l6 6 6-6" /></svg>
-          </span>
-          <h2>Bill of materials</h2>
-          <span className="sub">Counted from Fig. 1 as drawn · {capacity}</span>
-        </button>
-        {standard && (
-          <button type="button" className="csv"
-            onClick={(e) => { e.stopPropagation(); csv(); }}>Download CSV</button>
-        )}
+    <section className="nextstep" aria-labelledby="nextstep-h">
+      <div className="nscopy">
+        <h2 id="nextstep-h">Ready for an accurate layout?</h2>
+        <p>A dealer confirms quantities, capacities and a build-ready plan for your building.</p>
       </div>
-
-      {!standard ? (
-        <div className="dealer">
-          <b>{typeName} is not a frames-and-beams system</b>
-          <p>
-            Its material is rails, carts or rollers rather than upright frames, beam pairs and
-            wire decks, so a counted bill of materials would be misleading here. A dealer quotes
-            this from the layout above.
-          </p>
-          <button type="button">Send this sheet to a dealer</button>
+      <div className="nsact">
+        <div className="nsbtns">
+          <button type="button" className="nsprimary" onClick={() => setPending('dealer')}>
+            Connect with a dealer
+          </button>
+          <button type="button" className="nssecondary" onClick={() => setPending('cad')}>
+            Open in Trace CAD
+          </button>
         </div>
-      ) : open ? (
-        <>
-          <table className="bomt">
-            <thead>
-              <tr><th>Item</th><th className="q">Qty</th><th className="w">Unit lb</th><th className="w">Total lb</th></tr>
-            </thead>
-            <tbody>
-              {bom.lines.map((l) => {
-                const first = !seen.has(l.group);
-                if (first) seen.add(l.group);
-                return (
-                  <Fragment key={`${l.group}-${l.item}`}>
-                    {first && <tr className="grp"><td colSpan={4}>{l.group}</td></tr>}
-                    <tr>
-                      <td>{l.item}<span className="d">{l.description}</span></td>
-                      <td className="q">{l.qty.toLocaleString()}</td>
-                      <td className="w">{l.unitWeightLb.toLocaleString()}</td>
-                      <td className="w">{Math.round(l.totalWeightLb).toLocaleString()}</td>
-                    </tr>
-                  </Fragment>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr><td>Total</td><td className="q" /><td className="w" />
-                <td className="w">{Math.round(bom.totalWeightLb).toLocaleString()}</td></tr>
-            </tfoot>
-          </table>
-          <div className="bomfoot">
-            <div><div className="k">Capacity</div><div className="v">{capacity.replace('~', '')}</div></div>
-            <div><div className="k">Line items</div><div className="v">{bom.lines.length}</div></div>
-            <div><div className="k">Steel weight</div><div className="v">{Math.round(bom.totalWeightLb).toLocaleString()}</div></div>
-            <div><div className="k">Truckloads approx</div><div className="v">{bom.truckloads}</div></div>
-          </div>
-          {mixedDealer && (
-            // The cantilever parts are countable even where the pallet type's
-            // are not, so the table stays and the hand-off joins it.
-            <div className="dealer">
-              <b>{mixedDealer} is not a frames-and-beams system</b>
-              <p>
-                The cantilever strip above is counted, but this pallet type&#39;s material is
-                rails, carts or rollers rather than upright frames, beam pairs and wire decks,
-                so a counted bill for it would be misleading. A dealer quotes that half from the
-                layout above.
-              </p>
-              <button type="button">Send this sheet to a dealer</button>
-            </div>
-          )}
-          <p className="bomnote">
-            {mixed ? (
-              <>
-                Counted from Fig. 1 as drawn — two families, two sections, one total. The
-                cantilever strip takes a base per armed face and holds product on the base as
-                well as on every arm; the pallet racking takes N+1 upright frames for a row of N
-                bays, and its floor level carries no beams or decking.{' '}
-                <b>Quantities are ours; capacities are the dealer&#39;s.</b> Unit weights are
-                typical figures for sizing freight only.
-              </>
-            ) : long ? (
-              <>
-                Counted from the runs as drawn — change any input above and this recounts.
-                A base per armed face and two anchors per tower, arms are towers times arm levels
-                times sides, and brace sets step with the tower height. Product rests on the base
-                as well as on the arms, so the capacity counts one level more than there are
-                arms.{' '}
-                <b>Quantities are ours; capacities are the dealer&#39;s.</b> Arm capacity comes
-                from the manufacturer&#39;s chart for a given profile, arm length and deflection
-                limit, and the tower section size comes from the same chart. Nothing here rates
-                the steel.
-              </>
-            ) : (
-              <>
-                Counted from the layout as drawn — change any input above and this recounts. A row
-                of N bays takes N+1 upright frames, beams are supplied in pairs, and the floor
-                level carries no beams or decking. Unit weights are typical figures for sizing
-                freight only; confirm against your supplier&#39;s catalogue before ordering.
-              </>
-            )}
-          </p>
-        </>
-      ) : null}
+        <p className="nssoon" aria-live="polite">
+          {pending === 'dealer' && 'Coming soon — dealer connections open with sign-in.'}
+          {pending === 'cad' && 'Coming soon — Trace CAD is not open yet.'}
+        </p>
+      </div>
     </section>
   );
-});
+}

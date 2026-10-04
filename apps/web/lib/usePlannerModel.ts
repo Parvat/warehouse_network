@@ -3,14 +3,13 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   AVAILABLE_THREE_QUARTERS, BEAM_LENGTHS_IN,
-  CANTILEVER_ARM_SPACINGS_IN,
-  CANTILEVER_PRODUCT_FT, DEFAULT_GRID_FT, FLUE_IN, armLengthForProduct, ftIn,
+  CANTILEVER_PRODUCT_FT, DOCK_APRON_FT, FLUE_IN, armLengthForProduct, ftIn,
   RACK_TYPES, TRUCK_AISLE_RANGE_FT, TRUCK_LABEL,
-  buildingSizeCheck, columnNote, envelopeChecks, isTruckKind, truckAisleCheck, truckAisleFt,
-  cantileverBom, cantileverChecks, cantileverLevels, compareRackTypes,
-  layoutCantileverRuns, layoutMixed, layoutRack, mixedBom, mixedChecks,
-  palletBomIsCountable, rackType, solve,
-  type Bom, type CantileverRunInput, type CantileverRunLayout, type EngineInput,
+  buildingSizeCheck, envelopeChecks, isTruckKind, truckAisleCheck, truckAisleFt,
+  cantileverChecks, cantileverLevels, compareRackTypes,
+  layoutCantileverRuns, layoutMixed, layoutRack, mixedChecks,
+  rackType, solve,
+  type CantileverRunInput, type CantileverRunLayout, type EngineInput,
   type Flag, type MixedInput, type MixedLayout, type MixedPriority, type MixedWall,
   type Orientation,
   type Availability, type RackKind, type RackLayout, type RackLayoutInput,
@@ -21,7 +20,7 @@ import {
  * A3 sizing sheet.
  *
  * Every figure on the screen comes out of the engine: `solve` for the pallet
- * spec, flags and bill of materials, `layoutCantileverRuns` / `cantileverBom`
+ * spec and flags, `layoutCantileverRuns` / `cantileverChecks`
  * for long products, `layoutRack` for what Fig. 1 draws. Nothing here does rack
  * arithmetic — it only decides what to hand the engine and memoises the result.
  *
@@ -49,16 +48,12 @@ export type AvailableMode = 'pct' | 'area';
 /** The percentages offered. 100 is the optimistic reading, and the default. */
 export const AVAILABLE_PCTS = [100, 90, 80, 75, 70, 60] as const;
 /** What is known about the column grid. */
-export type ColumnsMode = 'grid' | 'later';
-
 export interface BuildingDraft {
   lengthFt: number; widthFt: number; clearHeightFt: number;
   /** A building holds more than racking; this says how much more. */
   available: AvailableMode;
   availablePct: number;
   usableSqFt: number;
-  columns: ColumnsMode;
-  gridXFt: number; gridYFt: number;
 }
 export interface PalletDraft { depthIn: number; widthIn: number; loadHeightIn: number; weightLb: number }
 export interface ConfigDraft {
@@ -66,12 +61,10 @@ export interface ConfigDraft {
   orientation: Orientation;
   /** The truck sets the aisle; it does not lock it. */
   truck: TruckKind;
-  /**
-   * Undefined leaves the cross aisles to Trace's reading of the run — a break
-   * every hundred feet. A number is the customer's own, and holds until they
-   * clear it. Fire code is the AHJ's call, so this has to be answerable.
+  /*
+   * No cross-aisle count: the engine places them, one per 120 ft of run on a
+   * bay boundary, and the egress flag says so and points at the AHJ.
    */
-  crossAisles: number | undefined;
   /** Which family takes the building first. Only asked of a mixed layout. */
   priority: MixedPriority;
 }
@@ -112,12 +105,11 @@ const DEFAULT_BUILDING: BuildingDraft = {
   // Defaults to the optimistic reading, and says so in a flag rather than
   // quietly assuming a figure the customer never gave.
   available: 'pct', availablePct: 100, usableSqFt: 20000,
-  columns: 'later', gridXFt: DEFAULT_GRID_FT, gridYFt: DEFAULT_GRID_FT,
 };
 const DEFAULT_CONFIG: ConfigDraft = {
   beamIn: 96,
   orientation: 'length', truck: 'counterbalance',
-  crossAisles: undefined, priority: 'cantilever',
+  priority: 'cantilever',
 };
 const WALL_CLEARANCE_FT = 2.5;
 const DEFAULT_ARM_SPACING_IN = 24;
@@ -150,14 +142,10 @@ export interface PlannerModel {
   };
   setBeamIn: (v: number) => void;
   setTruck: (v: TruckKind) => void;
-  setCrossAisles: (v: number | undefined) => void;
   setPriority: (v: MixedPriority) => void;
   setAvailable: (v: AvailableMode) => void;
   setAvailablePct: (v: number) => void;
   setUsableSqFt: (v: number) => void;
-  setColumnsMode: (v: ColumnsMode) => void;
-  setGridXFt: (v: number) => void;
-  setGridYFt: (v: number) => void;
   setOrientation: (v: Orientation) => void;
   setSprinklers: (v: SprinklerKind) => void;
   selectKind: (k: RackKind) => void;
@@ -178,18 +166,10 @@ export interface PlannerModel {
 
   /** Whichever family is showing. */
   flags: readonly Flag[];
-  bom: Bom;
   types: readonly TypeCell[];
   placard: readonly { k: string; v: string }[];
   blurb: string;
-  /** True where the parts really are countable rather than a dealer's quote. */
-  standardBom: boolean;
-  /** The cross aisles this building gets, whichever family is showing. */
-  crossAisles: number;
-  /** True where that figure is Trace's own rather than the customer's. */
-  crossAislesAuto: boolean;
   /** What the columns did to this layout, in a sentence. */
-  columnNote: string | undefined;
   /**
    * The columns standing in a forklift aisle on the floor that is showing,
    * and what that floor's capacity is counted in.
@@ -199,19 +179,14 @@ export interface PlannerModel {
    * their own aisles — and their own currency: linear feet of arm is not
    * pallet positions and never converts to it.
    */
-  aisleColumns: { count: number; holds: 'positions' | 'linear' | 'both' } | undefined;
   /** Everything Trace assumed rather than asked, for the one-line summary. */
   assumptions: readonly string[];
   truckRange: { min: number; max: number };
   /** Derived from the truck, shown rather than asked for. */
   aisleFt: number;
   truckOptions: readonly (readonly [TruckKind, string])[];
-  /** Mixed bills keep the cantilever section even where the pallet type has none. */
-  palletBomCountable: boolean;
 
   beamOptions: readonly number[];
-
-  armSpacingOptions: readonly number[];
   /** Bounds for the fields the sheet still asks, so a blank cannot reach the engine. */
   productFt: { min: number; max: number; fallback: number };
   availablePcts: readonly number[];
@@ -291,8 +266,6 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
     buildingLengthFt: building.lengthFt,
     buildingWidthFt: building.widthFt,
     available,
-    gridXFt: building.columns === 'grid' ? building.gridXFt : undefined,
-    gridYFt: building.columns === 'grid' ? building.gridYFt : undefined,
     beamLengthIn: config.beamIn,
     palletWidthIn: pallet.widthIn,
     palletsPerBay: solved.spec.palletsPerBay,
@@ -301,7 +274,6 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
     aisleWidthFt: aisleFt,
     wallClearanceFt: WALL_CLEARANCE_FT,
     orientation: config.orientation,
-    crossAisles: config.crossAisles,
   }), [building.lengthFt, building.widthFt, config, solved.spec, aisleFt, available]);
 
   const layout = useMemo(() => layoutRack(kind, rackInput), [kind, rackInput]);
@@ -316,18 +288,14 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
     wallClearanceFt: WALL_CLEARANCE_FT,
     orientation: config.orientation,
     available,
-    gridXFt: building.columns === 'grid' ? building.gridXFt : undefined,
-    gridYFt: building.columns === 'grid' ? building.gridYFt : undefined,
     productLengthFt: cant.productLengthFt,
     armLengthIn: armLengthIn,
     armSpacingIn: cant.armSpacingIn,
     linearFeetNeededFt: cant.linearFeetNeededFt,
-    crossAisles: config.crossAisles,
-  }), [building, aisleFt, config.orientation, config.crossAisles, cant, available]);
+  }), [building, aisleFt, config.orientation, cant, available]);
 
   const runs = useMemo(() => layoutCantileverRuns(runInput), [runInput]);
   const longFlags = useMemo(() => cantileverChecks(runInput, runs), [runInput, runs]);
-  const longBom = useMemo(() => cantileverBom(runs), [runs]);
 
   /* ── both, on one floor ────────────────────────────────────────────── */
 
@@ -338,8 +306,6 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
     wallClearanceFt: WALL_CLEARANCE_FT,
     orientation: config.orientation,
     available,
-    gridXFt: building.columns === 'grid' ? building.gridXFt : undefined,
-    gridYFt: building.columns === 'grid' ? building.gridYFt : undefined,
     cantilever: {
       linearFeetNeededFt: cant.linearFeetNeededFt,
       productLengthFt: cant.productLengthFt,
@@ -356,14 +322,13 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
       aisleWidthFt: aisleFt,
     },
     priority: config.priority,
-    crossAisles: config.crossAisles,
   }), [building, config, cant, kind, solved.spec, available, aisleFt]);
 
   const mixed = useMemo(() => layoutMixed(mixedInput), [mixedInput]);
   const mixedFlags = useMemo(() => mixedChecks(mixedInput, mixed), [mixedInput, mixed]);
 
-  // The pallet bill has to be counted from the reduced building, not the whole
-  // one, or it would list frames for racking the strip displaced.
+  // The pallet flags have to come from the reduced building, not the whole
+  // one, or they would describe racking the strip displaced.
   const mixedPalletSolve = useMemo(() => {
     const lost = mixed.stripTotalDepthFt;
     return solve({
@@ -373,11 +338,6 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
         : { ...engineInput.building, lengthFt: Math.max(1, building.lengthFt - lost) },
     });
   }, [engineInput, mixed.stripTotalDepthFt, config.orientation, building]);
-
-  const mixedBomLines = useMemo(
-    () => mixedBom(cantileverBom(mixed.strip),
-      palletBomIsCountable(kind) ? mixedPalletSolve.bom : null),
-    [mixed.strip, kind, mixedPalletSolve]);
 
   /* ── handlers ──────────────────────────────────────────────────────── */
 
@@ -401,9 +361,6 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
       ...b, available: 'pct', availablePct: v,
     })),
     usableSqFt: (v: number) => setBuilding((b) => ({ ...b, usableSqFt: v })),
-    columns: (v: ColumnsMode) => setBuilding((b) => ({ ...b, columns: v })),
-    gridXFt: (v: number) => setBuilding((b) => ({ ...b, gridXFt: v })),
-    gridYFt: (v: number) => setBuilding((b) => ({ ...b, gridYFt: v })),
   }), []);
 
   const onPallet = useMemo<Record<keyof PalletDraft, (v: number) => void>>(() => ({
@@ -428,8 +385,6 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
     // trim a foot to clear a column, and the check flag catches a real mistake.
     truck: (v: TruckKind) => setConfig((c) => ({ ...c, truck: v })),
     orientation: (v: Orientation) => setConfig((c) => ({ ...c, orientation: v })),
-    // Undefined hands it back to Trace, which is what the "auto" marker means.
-    crossAisles: (v: number | undefined) => setConfig((c) => ({ ...c, crossAisles: v })),
     priority: (v: MixedPriority) => setConfig((c) => ({ ...c, priority: v })),
   }), []);
 
@@ -457,6 +412,24 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
     }));
   }, [rackInput, kind, selectKind, family, config.orientation, building, mixed.stripTotalDepthFt]);
 
+  /*
+   * What the dock end costs, before any racking is drawn.
+   *
+   * The apron is reserved on the axis the rows run down, so the strip spans the
+   * other one — turn the rows and the same twelve feet costs a different area.
+   * Every family reserves it and every family's plan draws it, so every
+   * family's schedule names it.
+   */
+  const stagingRow = useMemo(() => {
+    const acrossFt = Math.max(0,
+      (config.orientation === 'length' ? building.widthFt : building.lengthFt)
+      - WALL_CLEARANCE_FT * 2);
+    return {
+      k: 'Staging',
+      v: `${DOCK_APRON_FT} ft · ${Math.round(DOCK_APRON_FT * acrossFt).toLocaleString()} sq ft`,
+    };
+  }, [config.orientation, building.lengthFt, building.widthFt]);
+
   const placard = useMemo(() => (family === 'both'
     // Two units. Adding them would be meaningless, so they are reported side
     // by side and never combined.
@@ -479,6 +452,7 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
       { k: 'Arm spacing', v: `${mixed.strip.armPitchIn} in` },
       { k: 'Beam', v: `${solved.spec.beamLengthIn} in` },
       { k: 'Base / arm', v: `${mixed.strip.armLengthIn} in` },
+      stagingRow,
     ]
     : family === 'long'
     ? [
@@ -500,6 +474,7 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
       { k: 'Sides armed', v: runs.rowSides.length === 0 ? 'None'
         : `${runs.rowSides.filter((x) => x === 2).length} double · `
           + `${runs.rowSides.filter((x) => x === 1).length} single` },
+      stagingRow,
     ]
     : [
       { k: 'Beam', v: `${solved.spec.beamLengthIn} in` },
@@ -517,21 +492,21 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
         ? [{ k: type.pick === 'lane' ? 'Lane depth' : 'Deep', v: `${layout.deep} pallets` }]
         : []),
       { k: 'Usable floor', v: `${Math.round(layout.usableAlongFt * layout.acrossFt).toLocaleString()} sq ft` },
+      stagingRow,
       { k: 'Flue', v: `${layout.flueIn} in` },
       { k: 'Cross aisles', v: layout.crossAisles === 0 ? 'none'
         : `${layout.crossAisles} × ${layout.crossAisleWidthFt} ft` },
       { k: 'Pallet positions', v: layout.positions.toLocaleString() },
-    ]), [family, runs, mixed, solved.spec, type, layout]);
+    ]), [family, runs, mixed, solved.spec, type, layout, stagingRow]);
 
   const isLong = family === 'long';
   const isMixed = family === 'both';
-  const aisleColumnCount = isMixed ? mixed.columnsInAisles
-    : isLong ? runs.columnsInAisles : layout.columnsInAisles;
-
-  // The floor Trace assumed, rather than the racking it drew on it.
+  // The floor Trace assumed, rather than the racking it drew on it. The sheet
+  // no longer asks about building columns, so the floor it assumes is a clear
+  // one. The engine still knows how to be told otherwise.
   const envelopeFlags = useMemo(() => envelopeChecks(layout, {
-    available: available.mode, columns: building.columns,
-  }), [layout, available.mode, building.columns]);
+    available: available.mode, columns: 'none',
+  }), [layout, available.mode]);
 
   // A property of the building, so it belongs to every family's list.
   const sizeFlag = useMemo(
@@ -542,10 +517,6 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
     building.available === 'area' ? `${building.usableSqFt.toLocaleString()} sq ft is rackable`
       : building.availablePct >= 100 ? 'the whole footprint is available'
         : `${building.availablePct}% of the footprint is rackable`,
-    building.columns === 'grid'
-      ? `a ${building.gridXFt} × ${building.gridYFt} ft column grid`
-      : building.columns === 'later' ? 'a clear floor until you mark the columns'
-      : 'no building columns',
     layout.crossAisles === 0 ? 'no cross aisle'
       : `${layout.crossAisles} cross ${layout.crossAisles === 1 ? 'aisle' : 'aisles'}`,
     `a ${aisleFt} ft aisle for a ${TRUCK_LABEL[config.truck].toLowerCase()}`,
@@ -557,11 +528,9 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
     onBuilding, onPallet, onCant,
     setBeamIn: setField.beamIn,
     setTruck: setField.truck,
-    setCrossAisles: setField.crossAisles, setPriority: setField.priority,
+    setPriority: setField.priority,
     setAvailable: onBuilding2.available, setAvailablePct: onBuilding2.availablePct,
     setUsableSqFt: onBuilding2.usableSqFt,
-    setColumnsMode: onBuilding2.columns, setGridXFt: onBuilding2.gridXFt,
-    setGridYFt: onBuilding2.gridYFt,
     setOrientation: setField.orientation,
     setSprinklers, selectKind,
     spec: solved.spec, layout, runs, mixed,
@@ -576,7 +545,6 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
       ...(isMixed ? [...mixedFlags, ...mixedPalletSolve.flags]
         : isLong ? longFlags : [...solved.flags, ...envelopeFlags]),
     ],
-    bom: isMixed ? mixedBomLines : isLong ? longBom : solved.bom,
     // One system fixed by the product length, so there is nothing to compare;
     // a mixed sheet still compares the pallet types, in the width they get.
     types: isLong ? [] : rackCells,
@@ -591,11 +559,6 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
         + 'the arms face follows the row: against a wall they can only be reached from the aisle, '
         + 'out on the floor they are reached from both.'
       : type.blurb,
-    // Cantilever really is modular, so unlike drive-in or push-back its parts
-    // are countable rather than a dealer's quote.
-    standardBom: isLong ? true : isMixed ? true : type.standardBom,
-    crossAisles: isLong ? runs.crossAisles : layout.crossAisles,
-    crossAislesAuto: config.crossAisles === undefined,
     // Not an option Trace offers, but worth knowing it exists.
     tunnelNote: layout.crossAisles > 0
       ? 'Some warehouses tunnel a cross aisle — clearing the bottom level and storing above '
@@ -608,25 +571,12 @@ export function usePlannerModel(handoff: PlannerHandoff = {}): PlannerModel {
           ? ` · last row ${(isMixed ? mixed.strip : runs).runsInLastRow} of `
             + `${(isMixed ? mixed.strip : runs).runsPerRow} runs, the rest of it left empty` : '')
       : undefined,
-    columnNote: building.columns === 'grid' && !isLong
-      ? columnNote(layout, { xFt: building.gridXFt, yFt: building.gridYFt })
-      : undefined,
-    // Undefined where there is nothing to say: a notice that renders "0
-    // columns fall in a forklift aisle" is noise in a column meant for the
-    // things that need a second look.
-    aisleColumns: aisleColumnCount > 0
-      ? { count: aisleColumnCount,
-          holds: isMixed ? 'both' as const : isLong ? 'linear' as const : 'positions' as const }
-      : undefined,
     assumptions: isLong ? [] : assumptions,
     truckRange: TRUCK_AISLE_RANGE_FT[config.truck],
     aisleFt,
     truckOptions: (Object.keys(TRUCK_LABEL) as TruckKind[])
       .map((t) => [t, TRUCK_LABEL[t]] as const),
-    palletBomCountable: palletBomIsCountable(kind),
     beamOptions: BEAM_LENGTHS_IN,
-
-    armSpacingOptions: CANTILEVER_ARM_SPACINGS_IN,
     productFt: CANTILEVER_PRODUCT_FT,
     availablePcts: AVAILABLE_PCTS,
     maxLevels: cantileverLevels(building.clearHeightFt, cant.armSpacingIn),

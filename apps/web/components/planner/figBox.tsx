@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import type { FigBox } from './figText';
 
 /**
  * The box a figure fills.
@@ -98,9 +100,20 @@ export function FigExpand(props: {
   /** The drawing's own shape, so the overlay fits it without distorting it. */
   aspect: number;
   children: React.ReactNode;
+  /**
+   * The figure drawn again for the overlay's own size. Without it the inline
+   * drawing is magnified, type and all, so a label left off for want of room
+   * stays off however large the view. With it the type stays the sheet's size
+   * and the drawing grows around it — see `FittedFigure.refit`.
+   */
+  refit?: (box: FigBox) => { viewBox: string; aspect: number; drawn: React.ReactNode };
 }) {
-  const { label, viewBox, aspect, children } = props;
+  const { label, aspect, refit } = props;
   const [open, setOpen] = useState(false);
+  const [host, setHost] = useState<HTMLElement | null>(null);
+  // The room the drawing actually gets, measured once the overlay is up.
+  const fitRef = useRef<HTMLDivElement>(null);
+  const [roomPx, setRoomPx] = useState<{ w: number; h: number } | null>(null);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -109,17 +122,53 @@ export function FigExpand(props: {
     return () => document.removeEventListener('keydown', key);
   }, [open]);
 
+  useEffect(() => {
+    const el = fitRef.current;
+    if (!open || !el) { setRoomPx(null); return undefined; }
+    const measure = () => {
+      const cs = getComputedStyle(el);
+      setRoomPx({
+        w: el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+        h: el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom),
+      });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [open]);
+
+  // Whichever side runs out first sets the width the drawing is fitted to. The
+  // refitted drawing has its own shape, not the sheet frame's, so it is fitted
+  // across the room first and fitted again to the height if that shape turns
+  // out too tall for it.
+  const big = (() => {
+    if (!refit || !roomPx || roomPx.w <= 0 || roomPx.h <= 0) return null;
+    const across = refit({ kind: 'row', rowPx: roomPx.w, sibling: 0 });
+    return roomPx.h * across.aspect >= roomPx.w
+      ? across : refit({ kind: 'height', heightPx: roomPx.h });
+  })();
+  const viewBox = big?.viewBox ?? props.viewBox;
+  const shape = big?.aspect ?? aspect;
+  const children = big?.drawn ?? props.children;
+
   return (
     <>
       <button type="button" className="figexpandbtn" aria-label={label} aria-expanded={open}
-        onClick={() => setOpen(true)}>
+        onClick={(e) => {
+          // Into the sheet's root, not the figure's corner: the corner is its
+          // own stacking context, so from there the overlay could not rise above
+          // the sticky masthead, which painted over its bar and its close button.
+          setHost(e.currentTarget.closest<HTMLElement>('.a3') ?? document.body);
+          setOpen(true);
+        }}>
         <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" fill="none"
           strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M14.5 4.5h5v5" /><path d="M9.5 19.5h-5v-5" />
           <path d="M19.5 4.5l-6.5 6.5" /><path d="M4.5 19.5l6.5-6.5" />
         </svg>
       </button>
-      {open && (
+      {open && host && createPortal(
         /* Anywhere off the drawing closes it, as do the control and Escape. */
         <div className="figoverlay" role="dialog" aria-modal="true" aria-label={label}
           onMouseDown={(e) => { if (e.target === e.currentTarget) setOpen(false); }}>
@@ -129,14 +178,15 @@ export function FigExpand(props: {
               <button type="button" className="figoverlayx" aria-label="Close"
                 onClick={() => setOpen(false)}>&#215;</button>
             </div>
-            <div className="figoverlayfit">
-              <svg viewBox={viewBox} style={{ aspectRatio: String(aspect) }}
+            <div className="figoverlayfit" ref={fitRef}>
+              <svg viewBox={viewBox} style={{ aspectRatio: String(shape) }}
                 preserveAspectRatio="xMidYMid meet" aria-hidden="true">
                 {children}
               </svg>
             </div>
           </div>
-        </div>
+        </div>,
+        host,
       )}
     </>
   );
