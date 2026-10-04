@@ -321,6 +321,18 @@ export function planFrameY(font: number): { y0: number; y1: number } {
 export const FIG_TEXT = { anno: 10, tiny: 10, dim: 10 } as const;
 
 /**
+ * A cantilever tower's mark in plan, screen pixels: the column section — a
+ * slim post the arms stand out from, not the base under them.
+ *
+ * Held in the proportion to the arms the marks had in 31d72d7 (3.2 × 5.2 units
+ * beside 0.9-unit arms). The mark itself never changed size; the arms went to
+ * a fixed 0.75 px with the rest of the strokes, and the towers were left
+ * looking heavy beside them. In pixels like the strokes, so the expanded view
+ * keeps the same proportion.
+ */
+export const TOWER_MARK_PX = { along: 2.7, across: 4.3 } as const;
+
+/**
  * Line weights, in screen pixels, by what the line is.
  *
  * Every figure stroke is drawn with `vector-effect: non-scaling-stroke` (set

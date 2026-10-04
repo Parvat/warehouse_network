@@ -10,7 +10,7 @@ import { FigBoxEl, FigExpand, PlanHead, accessLegend, type LegendItem } from './
 import {
   centeredCrossAisleFt, floorFraction, planFit, planFrameX, planFrameY, planBox, fitFigure,
   type Extent, type FigBox,
-  STROKE,
+  FIG_TEXT, STROKE, TOWER_MARK_PX,
 } from './figText';
 
 /**
@@ -84,6 +84,12 @@ function MixedPlan(p: MixedPlanProps) {
     : { x: PX + aPx, y: PY + cPx, width: aLenPx, height: cLenPx });
   const box = (aFt: number, aLenFt: number, cFt: number, cLenFt: number) =>
     at(aFt * sc, aLenFt * sc, cFt * sc, cLenFt * sc);
+  // A tower as its column section: a slim post, the same size on screen inline
+  // and expanded, in proportion to the arms — see TOWER_MARK_PX.
+  const towerMark = (tA: number, colC: number) => {
+    const u = fAnno / FIG_TEXT.anno, w = TOWER_MARK_PX.along * u, d = TOWER_MARK_PX.across * u;
+    return at(tA * sc - w / 2, w, colC * sc - d / 2, d);
+  };
   /**
    * A frame across a row at `bPx` along it: a divider between bays, standing a
    * unit proud of each face so it reads as the upright it is. A line rather than
@@ -200,7 +206,7 @@ function MixedPlan(p: MixedPlanProps) {
         const tA = towerA + t * S.towerCentresFt;
         parts.push(
           <line key={key++} {...seg(tA, 0, armC0, armC1 - armC0)} stroke={ARM} strokeWidth={STROKE.beam} />,
-          <rect key={key++} {...at(tA * sc - 1.4, 2.8, colC * sc - 2.2, 4.4)} fill={G} />,
+          <rect key={key++} {...towerMark(tA, colC)} fill={G} />,
         );
       }
       parts.push(<line key={key++} {...seg(towerA, S.spanFt, colC, 0)} stroke={G} strokeWidth={STROKE.rack} />);

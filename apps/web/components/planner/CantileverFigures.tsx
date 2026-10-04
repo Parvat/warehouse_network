@@ -7,7 +7,7 @@ import { FigBoxEl, FigExpand, PlanHead, type LegendItem } from './figBox';
 import {
   EL_FRAME, centeredCrossAisleFt, elevationFrameY, elevationPpi, elBox, floorFraction,
   planFit, planFrameX, planFrameY, planBox, fitFigure, type Extent, type FigBox,
-  STROKE,
+  FIG_TEXT, STROKE, TOWER_MARK_PX,
 } from './figText';
 import type { CantileverRunLayout, Orientation } from '@trace/rack-engine';
 
@@ -72,6 +72,12 @@ function Plan(p: CantileverPlanProps) {
     : { x: PX + aPx, y: PY + cPx, width: aLenPx, height: cLenPx });
   const box = (aFt: number, aLenFt: number, cFt: number, cLenFt: number) =>
     at(aFt * sc, aLenFt * sc, cFt * sc, cLenFt * sc);
+  // A tower as its column section: a slim post, the same size on screen inline
+  // and expanded, in proportion to the arms — see TOWER_MARK_PX.
+  const towerMark = (tA: number, colC: number) => {
+    const u = fAnno / FIG_TEXT.anno, w = TOWER_MARK_PX.along * u, d = TOWER_MARK_PX.across * u;
+    return at(tA * sc - w / 2, w, colC * sc - d / 2, d);
+  };
   const line = (aFt: number, aLenFt: number, cFt: number, cLenFt: number) => {
     const r = box(aFt, aLenFt, cFt, cLenFt);
     return { x1: r.x, y1: r.y, x2: r.x + r.width, y2: r.y + r.height };
@@ -109,7 +115,7 @@ function Plan(p: CantileverPlanProps) {
         const tA = towerA + t * L.towerCentresFt;
         parts.push(
           <line key={key++} {...line(tA, 0, armC0, armC1 - armC0)} stroke={ARM} strokeWidth={STROKE.beam} />,
-          <rect key={key++} {...at(tA * sc - 1.6, 3.2, colC * sc - 2.6, 5.2)} fill={G} />,
+          <rect key={key++} {...towerMark(tA, colC)} fill={G} />,
         );
       }
       parts.push(<line key={key++} {...line(towerA, L.spanFt, colC, 0)}
@@ -195,7 +201,8 @@ function Plan(p: CantileverPlanProps) {
       label: 'MATERIAL',
       swatch: <rect x={0.4} y={0.6} width={9.2} height={4.8} fill={KRAFT} stroke={KRAFT_EDGE} strokeWidth={0.8} />,
     },
-    { label: 'TOWER', swatch: <rect x={3.6} y={0.6} width={2.8} height={4.8} fill={G} /> },
+    { label: 'TOWER', swatch: <rect x={5 - TOWER_MARK_PX.along / 2} y={3 - TOWER_MARK_PX.across / 2}
+      width={TOWER_MARK_PX.along} height={TOWER_MARK_PX.across} fill={G} /> },
   ];
 
   return (
